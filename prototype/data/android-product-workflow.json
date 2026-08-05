@@ -1,0 +1,74 @@
+{
+  "id": "android-product-lifecycle",
+  "name": "Android 应用交付流程",
+  "version": "1.0.0",
+  "referenceType": "human-curated",
+  "description": "面向 Android 原生应用的需求、架构、实现、测试与发布参考流程；Agent 可按具体需求裁剪。",
+  "stages": [
+    {
+      "id": "frame-android-requirement",
+      "phase": "定义",
+      "title": "澄清 Android 用户结果与约束",
+      "summary": "明确设备、系统版本、用户、离线与权限边界。",
+      "dependencies": [],
+      "deliverables": ["需求边界", "设备与系统兼容矩阵", "验收标准"],
+      "acceptanceGate": "主用户路径、最低 Android 版本、数据与权限约束均可验证。",
+      "capabilities": [
+        {"id": "android-requirements", "label": "Android 需求分析", "required": true, "terms": ["android requirements", "mobile product requirements", "android 需求", "安卓需求", "requirements"], "acceptanceCriteria": ["定义目标设备和最低系统版本"]},
+        {"id": "mobile-ux", "label": "移动端任务流设计", "required": true, "terms": ["mobile ux", "android ux", "material design", "移动端体验", "material 3"], "acceptanceCriteria": ["主路径与异常状态可操作"]}
+      ]
+    },
+    {
+      "id": "design-android-architecture",
+      "phase": "架构",
+      "title": "设计 Android 架构与数据边界",
+      "summary": "确定模块、状态、依赖注入、数据存储和网络策略。",
+      "dependencies": ["frame-android-requirement"],
+      "deliverables": ["模块边界", "状态与数据流", "安全设计"],
+      "acceptanceGate": "UI、领域与数据层职责清晰，敏感数据和离线策略已定义。",
+      "capabilities": [
+        {"id": "android-architecture", "label": "Android 应用架构", "required": true, "terms": ["android architecture", "clean architecture", "mvvm", "mvi", "viewmodel", "android 架构"]},
+        {"id": "android-data-security", "label": "Android 数据与安全", "required": true, "terms": ["android security", "room", "datastore", "offline first", "network security", "安卓安全", "数据存储"]}
+      ]
+    },
+    {
+      "id": "implement-compose-slice",
+      "phase": "实现",
+      "title": "实现 Kotlin / Compose 端到端切片",
+      "summary": "以真实状态完成一条从界面到数据的主路径。",
+      "dependencies": ["design-android-architecture"],
+      "deliverables": ["可运行应用", "Compose 界面", "真实数据路径"],
+      "acceptanceGate": "主路径可在目标设备运行，加载、空、错误和恢复状态均明确。",
+      "capabilities": [
+        {"id": "kotlin-development", "label": "Kotlin Android 开发", "required": true, "terms": ["kotlin android", "android development", "coroutines", "flow", "gradle", "安卓开发"]},
+        {"id": "jetpack-compose", "label": "Jetpack Compose 实现", "required": true, "terms": ["jetpack compose", "compose ui", "material 3", "composable", "compose navigation"]}
+      ]
+    },
+    {
+      "id": "verify-android-quality",
+      "phase": "验证",
+      "title": "验证 Android 功能、体验与兼容性",
+      "summary": "覆盖单元、UI、设备、无障碍与性能风险。",
+      "dependencies": ["implement-compose-slice"],
+      "deliverables": ["自动测试结果", "设备矩阵记录", "性能与无障碍检查"],
+      "acceptanceGate": "关键路径在目标 API 与设备配置通过，关键回归可重复发现。",
+      "capabilities": [
+        {"id": "android-testing", "label": "Android 自动化测试", "required": true, "terms": ["android testing", "compose ui test", "espresso", "robolectric", "junit", "安卓测试"]},
+        {"id": "android-device-qa", "label": "设备兼容与性能验收", "required": true, "terms": ["android emulator", "device testing", "macrobenchmark", "accessibility scanner", "firebase test lab", "设备兼容"]}
+      ]
+    },
+    {
+      "id": "release-android-app",
+      "phase": "发布",
+      "title": "签名、打包并发布 Android 应用",
+      "summary": "建立可追溯的构建、签名、商店发布和回退流程。",
+      "dependencies": ["verify-android-quality"],
+      "deliverables": ["签名 AAB", "发布检查表", "回退与监控方案"],
+      "acceptanceGate": "发布构建可重复、密钥不进入仓库、目标轨道可安装且可观测。",
+      "capabilities": [
+        {"id": "android-build-release", "label": "Android 构建与签名", "required": true, "terms": ["android build", "gradle", "aab", "apk", "app signing", "proguard", "r8", "签名打包"]},
+        {"id": "play-store-release", "label": "Play 商店发布与监控", "required": true, "terms": ["google play console", "play store release", "internal testing", "crashlytics", "android vitals", "商店发布"]}
+      ]
+    }
+  ]
+}

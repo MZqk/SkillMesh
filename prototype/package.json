@@ -1,0 +1,22 @@
+{
+  "name": "capability-atlas",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "description": "Local Skill capability maps with shared workflow history and Web-approved managed installation plans.",
+  "scripts": {
+    "start": "node server.mjs",
+    "mcp": "node mcp-server.mjs",
+    "scan": "node cli.mjs scan",
+    "plan": "node cli.mjs plan",
+    "setup:pdf": "node scripts/setup-pdf.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.4.3"
+  }
+}

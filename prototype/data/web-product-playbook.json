@@ -1,0 +1,369 @@
+{
+  "id": "web-product-playbook",
+  "name": "从 0 到 1 Web 产品开发手册",
+  "version": "0.2.0",
+  "workflowReferenceId": "web-product-lifecycle",
+  "description": "面向初级开发者的人工策划步骤骨架。前四阶段使用 Vibe Coding 探索，后五阶段使用 Loop Engineering 闭环交付。",
+  "stages": [
+    {
+      "id": "frame-direction",
+      "mode": "vibe",
+      "minimumAssessment": "若已有明确需求，仍需写出目标用户、问题陈述和最危险假设，避免直接把功能清单当作问题证据。",
+      "qualityGate": {
+        "level": "soft",
+        "criteria": ["问题陈述明确到具体用户、情境和当前阻碍。", "最危险假设可被后续证据推翻。"],
+        "requiredEvidence": []
+      },
+      "steps": [
+        {
+          "id": "identify-user-problem",
+          "title": "写清首个用户与真实问题",
+          "objective": "把宽泛方向收敛为可访谈、可观察的问题陈述。",
+          "requiredCapabilities": ["discovery", "problem-framing"],
+          "prerequisites": ["已阅读并理解冻结的 Project Brief。"],
+          "actions": ["选择最可能首先使用产品的一类用户。", "描述用户触发问题的具体情境、现有做法和损失。", "将方案词从问题陈述中移除，保留可验证的用户事实。"],
+          "prompt": "项目：{{projectName}}\n初始问题：{{problemStatement}}\n目标用户：{{targetUsers}}\n请帮助我生成一份问题陈述。先区分事实、假设与待访谈问题；不要提前设计功能。输出：用户画像、触发情境、当前替代做法、可证伪问题陈述。",
+          "commands": [],
+          "expectedOutputs": ["一页问题陈述", "首个用户与使用情境"],
+          "acceptanceCriteria": ["能够用一句话说明谁在什么情境遇到什么阻碍。", "问题陈述不依赖预设产品方案。"],
+          "failureModes": [{"symptom": "问题陈述仍是“做一个某某系统”。", "likelyCause": "把解决方案误当成用户问题。", "recovery": "删掉技术名词和功能名，重新描述用户当前行为、阻碍与损失。"}],
+          "evidenceRequirements": ["事实与假设分栏记录"]
+        },
+        {
+          "id": "rank-risky-assumptions",
+          "title": "排序最危险假设",
+          "objective": "明确哪些未知如果为假，会让项目失去价值。",
+          "requiredCapabilities": ["problem-framing"],
+          "prerequisites": ["已有问题陈述。"],
+          "actions": ["列出用户、问题、价值、渠道和技术假设。", "按影响与不确定性排序。", "为前三项假设定义最便宜的验证方式和停止条件。"],
+          "prompt": "基于项目 {{projectName}} 的问题陈述和首要结果 {{primaryOutcome}}，列出 10 个关键假设，并按“高影响/高不确定”优先级排序。为前三项给出一周内可完成的验证方式、支持证据、反证与停止条件。",
+          "commands": [],
+          "expectedOutputs": ["假设清单", "前三项验证计划"],
+          "acceptanceCriteria": ["每个高风险假设都有可观察的支持或反对证据。", "至少定义一个停止或收窄项目的条件。"],
+          "failureModes": [{"symptom": "所有假设都只能在产品做完后验证。", "likelyCause": "验证方式过重或假设表述不可证伪。", "recovery": "把假设拆成用户行为或可观测结果，选择访谈、落地页、原型或人工服务测试。"}],
+          "evidenceRequirements": ["假设优先级与验证决定记录"]
+        }
+      ]
+    },
+    {
+      "id": "validate-opportunity",
+      "mode": "vibe",
+      "minimumAssessment": "若机会已由业务方确认，仍需记录替代方案、证据来源和继续/停止条件。",
+      "qualityGate": {
+        "level": "soft",
+        "criteria": ["至少一组可复核证据支持问题存在。", "能解释现有替代方案为何没有充分解决问题。"],
+        "requiredEvidence": []
+      },
+      "steps": [
+        {
+          "id": "map-alternatives",
+          "title": "研究竞品与现有替代行为",
+          "objective": "理解用户今天如何解决问题，以及产品必须提供的差异。",
+          "requiredCapabilities": ["market-research"],
+          "prerequisites": ["已确定目标用户与问题陈述。"],
+          "actions": ["收集直接竞品、间接工具和人工替代行为。", "按用户任务、成本、切换阻力和缺口比较。", "标注每条结论的来源与日期。"],
+          "prompt": "为 {{projectName}} 制作替代方案地图。目标用户：{{targetUsers}}；问题：{{problemStatement}}。区分直接竞品、通用工具、人工流程和“不处理”。逐项比较核心任务、价格/成本、优点、缺口与切换阻力；所有事实必须附可复核来源，推断要明确标注。",
+          "commands": [],
+          "expectedOutputs": ["竞品与替代方案表", "差异化机会说明"],
+          "acceptanceCriteria": ["至少覆盖直接竞品、间接工具和不行动三类替代。", "事实与推断清晰分开。"],
+          "failureModes": [{"symptom": "比较只列功能数量，没有用户行为。", "likelyCause": "以产品视角代替任务视角。", "recovery": "改用用户完成同一任务的时间、成本、风险和切换阻力重新比较。"}],
+          "evidenceRequirements": ["来源链接、访问日期与推断标记"]
+        },
+        {
+          "id": "run-cheap-validation",
+          "title": "执行最低成本机会验证",
+          "objective": "在编码前获得继续、收窄或停止的证据。",
+          "requiredCapabilities": ["evidence-analysis"],
+          "prerequisites": ["已排序高风险假设并完成替代方案研究。"],
+          "actions": ["选择最高风险且一周内可验证的假设。", "定义样本、行为指标和通过/失败阈值。", "执行访谈或轻量实验并记录原始结果。", "作出继续、收窄或停止决定。"],
+          "prompt": "为高风险假设设计一个不需要完整产品的验证实验。项目：{{projectName}}。约束：{{constraints}}。输出实验假设、样本、步骤、行为指标、通过阈值、失败阈值、偏差风险和结果记录表；最后必须提供继续/收窄/停止决策模板。",
+          "commands": [],
+          "expectedOutputs": ["验证实验记录", "继续/收窄/停止决定"],
+          "acceptanceCriteria": ["实验使用行为或可复核事实，而非只询问意愿。", "决定与预先定义的阈值一致。"],
+          "failureModes": [{"symptom": "结果总能被解释为支持项目。", "likelyCause": "没有预先定义失败阈值。", "recovery": "在查看结果前补写反证和停止阈值，再由另一人复核决定。"}],
+          "evidenceRequirements": ["原始记录与决策理由"]
+        }
+      ]
+    },
+    {
+      "id": "shape-product",
+      "mode": "vibe",
+      "minimumAssessment": "即使范围由外部指定，也必须记录首版边界、非目标、成功指标和风险。",
+      "qualityGate": {
+        "level": "soft",
+        "criteria": ["团队能判断任何新需求是否属于首版。", "成功指标可由用户行为或系统结果观察。"],
+        "requiredEvidence": []
+      },
+      "steps": [
+        {
+          "id": "freeze-mvp-boundary",
+          "title": "冻结可部署 MVP 边界",
+          "objective": "把机会转成一条可在正式环境完成的最小用户主路径。",
+          "requiredCapabilities": ["product-spec"],
+          "prerequisites": ["机会验证结论为继续或收窄。"],
+          "actions": ["用用户结果描述唯一主路径。", "列出必须、可以延后和明确不做的能力。", "把每项范围连接到用户结果，移除无直接贡献项。"],
+          "prompt": "把 {{projectName}} 收敛为可部署 MVP。首要结果：{{primaryOutcome}}；已知范围：{{inScope}}；非目标：{{outOfScope}}。输出一条端到端用户主路径、Must/Should/Later 清单、明确非目标、依赖和范围变更规则。所有 Must 项必须直接支撑首要结果。",
+          "commands": [],
+          "expectedOutputs": ["MVP 产品说明", "范围与非目标清单", "端到端主路径"],
+          "acceptanceCriteria": ["主路径从用户输入到可观察结果完整闭环。", "每个首版能力都能追溯到首要用户结果。"],
+          "failureModes": [{"symptom": "首版仍包含多个互不依赖的产品方向。", "likelyCause": "没有选择唯一首要结果。", "recovery": "只保留完成首要结果所需的端到端切片，其余移到 Later。"}],
+          "evidenceRequirements": ["范围取舍理由"]
+        },
+        {
+          "id": "define-success-and-risks",
+          "title": "定义成功指标、风险与验收语言",
+          "objective": "让产品、设计、开发和测试使用同一组可判断标准。",
+          "requiredCapabilities": ["planning", "product-spec"],
+          "prerequisites": ["MVP 边界已明确。"],
+          "actions": ["把成功标准改写为可观察行为。", "列出产品、技术、安全和交付风险。", "为关键需求写 Given/When/Then 或等价验收例子。"],
+          "prompt": "根据 {{projectName}} 的范围和成功标准 {{successCriteria}}，输出北极星结果、护栏指标、关键风险清单，以及主路径的 Given/When/Then 验收例子。避免虚荣指标；每个指标要说明数据来源和决策用途。",
+          "commands": [],
+          "expectedOutputs": ["成功指标与护栏", "风险清单", "主路径验收例子"],
+          "acceptanceCriteria": ["指标有数据来源、阈值和决策用途。", "主路径正常、空、错和权限状态均有验收描述。"],
+          "failureModes": [{"symptom": "成功指标只有访问量或注册量。", "likelyCause": "指标没有连接用户结果。", "recovery": "改写为用户完成关键任务的比例、时间、质量或复用行为，并增加护栏。"}],
+          "evidenceRequirements": ["指标定义与风险负责人"]
+        }
+      ]
+    },
+    {
+      "id": "design-experience",
+      "mode": "vibe",
+      "minimumAssessment": "若已有设计稿，仍需检查主路径、响应式、无障碍、空状态、错误状态和恢复动作。",
+      "qualityGate": {
+        "level": "soft",
+        "criteria": ["目标用户无需理解内部技术即可完成主任务。", "关键边界状态都有明确反馈和下一步。"],
+        "requiredEvidence": []
+      },
+      "steps": [
+        {
+          "id": "map-critical-flow",
+          "title": "绘制关键用户流程与信息结构",
+          "objective": "先解决任务顺序和信息层级，再进入视觉细节。",
+          "requiredCapabilities": ["ux-design"],
+          "prerequisites": ["MVP 主路径和验收例子已冻结。"],
+          "actions": ["从用户触发点画到首要结果。", "补充身份、权限、空数据、错误和重试分支。", "为每个页面写唯一主任务和下一步。"],
+          "prompt": "为 {{projectName}} 的首要结果 {{primaryOutcome}} 设计关键用户流程。输出入口、页面/状态、用户动作、系统反馈、数据变化和下一步；覆盖首次使用、空状态、失败、重试、无权限和完成状态，并指出可以删除的步骤。",
+          "commands": [],
+          "expectedOutputs": ["关键用户流程图", "信息结构与页面职责"],
+          "acceptanceCriteria": ["每个页面只有一个明确主任务。", "失败分支能回到可行动状态。"],
+          "failureModes": [{"symptom": "流程图只包含理想路径。", "likelyCause": "忽略真实数据和失败状态。", "recovery": "对每个输入、网络请求、权限检查和数据为空点增加失败与恢复分支。"}],
+          "evidenceRequirements": ["流程评审决定"]
+        },
+        {
+          "id": "specify-interface-contract",
+          "title": "形成可实现的界面契约",
+          "objective": "定义组件、状态、响应式和无障碍要求，使实现与验收一致。",
+          "requiredCapabilities": ["visual-design", "ux-design"],
+          "prerequisites": ["关键用户流程已评审。"],
+          "actions": ["为关键页面制作低保真或高保真原型。", "列出组件状态、内容规则和交互反馈。", "定义移动端、桌面端、键盘和读屏行为。"],
+          "prompt": "把关键流程转换成界面契约。平台：{{targetPlatforms}}。输出每个页面的视觉层级、组件、数据字段、加载/空/错误/成功状态、响应式规则、键盘顺序、可访问名称和验收清单。优先复用一致组件，不要只描述颜色。",
+          "commands": [],
+          "expectedOutputs": ["界面原型", "组件与状态清单", "设计验收标准"],
+          "acceptanceCriteria": ["实现者无需猜测关键状态和内容规则。", "主路径可用键盘完成且控件有清晰可访问名称。"],
+          "failureModes": [{"symptom": "设计稿漂亮但无法描述数据和异常状态。", "likelyCause": "只画静态理想画面。", "recovery": "为每个组件补充数据来源、状态矩阵、错误文案和恢复动作。"}],
+          "evidenceRequirements": ["原型链接与设计验收清单"]
+        }
+      ]
+    },
+    {
+      "id": "build-foundation",
+      "mode": "loop",
+      "minimumAssessment": "若已有代码库，仍需验证本地启动、数据边界、权限、安全默认值和可回滚的架构决定。",
+      "qualityGate": {
+        "level": "hard",
+        "criteria": ["新环境能按文档启动。", "数据流、权限和秘密边界可解释并有验证证据。"],
+        "requiredEvidence": ["本地启动记录", "架构与数据模型", "安全边界检查"]
+      },
+      "steps": [
+        {
+          "id": "decide-minimum-architecture",
+          "title": "决定最小可维护架构",
+          "objective": "在编码前锁定足够支撑 MVP 的边界，而非提前设计平台。",
+          "requiredCapabilities": ["web-architecture", "security-design"],
+          "prerequisites": ["主路径、界面契约和数据需求已明确。"],
+          "actions": ["画出浏览器、服务端、数据库和外部服务的数据流。", "定义核心实体、权限规则和接口边界。", "记录关键架构决定、替代方案与回退条件。"],
+          "prompt": "为 {{projectName}} 设计最小架构。黄金路径技术栈：{{goldenStack}}；约束：{{constraints}}。输出系统上下文图、核心数据实体、服务端/客户端边界、认证授权规则、秘密管理、错误与降级策略，以及不超过 5 条 ADR。不要引入首版不需要的服务。",
+          "commands": [],
+          "expectedOutputs": ["系统与数据流图", "核心数据模型", "架构决定记录", "安全边界说明"],
+          "acceptanceCriteria": ["每个组件都能追溯到 MVP 必需能力。", "秘密和高权限操作不暴露给客户端。"],
+          "failureModes": [{"symptom": "架构包含多个尚无需求的服务。", "likelyCause": "为假想规模提前优化。", "recovery": "逐项要求对应的首版用户结果；没有直接证据的组件删除或延后。"}],
+          "evidenceRequirements": ["架构图、ADR 与威胁边界"]
+        },
+        {
+          "id": "establish-runnable-foundation",
+          "title": "建立可重复启动的工程骨架",
+          "objective": "让任何具备基础终端能力的开发者都能启动、检查和重置项目。",
+          "requiredCapabilities": ["web-architecture", "security-design"],
+          "prerequisites": ["最小架构与技术栈已确认。"],
+          "actions": ["创建应用骨架与清晰目录边界。", "配置环境变量示例、数据库迁移、日志和错误处理。", "写出安装、启动、检查和重置步骤并在干净环境复验。"],
+          "prompt": "基于 {{goldenStack}} 为 {{projectName}} 生成工程骨架实施清单。只给出需要人工复制执行的命令和文件变更，不要声称已执行。必须包含版本前提、环境变量示例、数据库迁移、种子数据、lint/typecheck/test 命令、启动健康检查和常见失败恢复。",
+          "commands": [],
+          "expectedOutputs": ["可运行应用骨架", "环境变量示例", "数据库迁移", "本地启动文档"],
+          "acceptanceCriteria": ["干净环境可按文档启动并访问健康检查。", "仓库不包含真实秘密，失败信息可行动。"],
+          "failureModes": [{"symptom": "只能在原开发者机器启动。", "likelyCause": "隐式依赖、未记录版本或本机秘密。", "recovery": "在新目录或新环境逐行执行文档，补齐每个隐式前提并移除本机绝对路径。"}],
+          "evidenceRequirements": ["干净环境启动日志", "健康检查结果", "秘密扫描结果"]
+        }
+      ]
+    },
+    {
+      "id": "implement-slice",
+      "mode": "loop",
+      "minimumAssessment": "若功能已存在，仍需验证真实数据、边界状态、可维护性和主路径闭环。",
+      "qualityGate": {
+        "level": "hard",
+        "criteria": ["端到端主路径使用真实持久化数据。", "刷新、空状态、错误和恢复均可复现。"],
+        "requiredEvidence": ["端到端主路径演示", "实现说明", "自动检查结果"]
+      },
+      "steps": [
+        {
+          "id": "plan-vertical-slice",
+          "title": "把主路径拆成端到端切片",
+          "objective": "以用户可见结果安排实现顺序，避免先堆孤立页面或底层模块。",
+          "requiredCapabilities": ["frontend-build", "service-build"],
+          "prerequisites": ["工程骨架可运行，界面和数据契约已确认。"],
+          "actions": ["从最小用户输入到持久化结果拆出第一条切片。", "为切片定义前端、接口、数据和测试任务。", "限制每个循环只改变一个可验收结果。"],
+          "prompt": "把 {{projectName}} 的主路径拆成 3 至 7 个端到端实现循环。每个循环必须包含用户结果、前端状态、服务端行为、数据变化、自动测试、人工验收和回滚点。优先让第一循环产生真实持久化结果，不要按技术层横向拆分。",
+          "commands": [],
+          "expectedOutputs": ["端到端切片计划", "任务与验收映射"],
+          "acceptanceCriteria": ["每个循环结束都有用户可见且可验收的增量。", "任务覆盖前端、服务、数据和测试。"],
+          "failureModes": [{"symptom": "计划先完成全部数据库和接口，最后才做页面。", "likelyCause": "按技术层而不是用户结果拆分。", "recovery": "选一个最小输入与输出，纵向包含刚好够用的数据、接口、界面和测试。"}],
+          "evidenceRequirements": ["切片顺序与依赖说明"]
+        },
+        {
+          "id": "implement-verify-loop",
+          "title": "按实现—验证—修正循环交付主路径",
+          "objective": "逐个切片完成代码、自动检查、浏览器反馈和失败修正。",
+          "requiredCapabilities": ["frontend-build", "service-build"],
+          "prerequisites": ["当前切片有明确验收标准和回滚点。"],
+          "actions": ["实现当前最小切片并保持变更范围单一。", "运行 lint、类型检查、相关自动测试和真实浏览器流程。", "保存证据，修复失败后重复验证。", "通过后记录技术债并进入下一切片。"],
+          "prompt": "指导我实现当前端到端切片。项目 {{projectName}}，技术栈 {{goldenStack}}。先列出将修改的文件、数据迁移、失败风险和验证命令；再给出小步实现建议。每一步后要求检查真实状态，不得把测试未运行描述为通过。最后输出变更摘要、证据和剩余技术债。",
+          "commands": [],
+          "expectedOutputs": ["可运行端到端主流程", "真实数据状态", "实现与技术债说明"],
+          "acceptanceCriteria": ["刷新后数据和状态保持正确。", "失败、空数据和重试路径有明确反馈。", "相关自动检查真实通过。"],
+          "failureModes": [{"symptom": "页面能演示但刷新后丢失，或依赖硬编码假数据。", "likelyCause": "切片没有贯穿持久化层。", "recovery": "从用户结果反向追踪到数据写入与读取，补齐迁移、接口和刷新测试。"}],
+          "evidenceRequirements": ["测试输出", "浏览器主路径记录", "变更摘要"]
+        }
+      ]
+    },
+    {
+      "id": "assure-quality",
+      "mode": "loop",
+      "minimumAssessment": "若已有测试，仍需核对其是否覆盖真实主路径、高风险边界和用户可见失败。",
+      "qualityGate": {
+        "level": "hard",
+        "criteria": ["主流程在真实浏览器通过。", "关键回归可自动发现，高风险限制对用户可见。"],
+        "requiredEvidence": ["自动测试输出", "真实浏览器验收记录", "风险与已知限制"]
+      },
+      "steps": [
+        {
+          "id": "automate-critical-regressions",
+          "title": "建立风险驱动的自动测试",
+          "objective": "用最少但有效的测试覆盖最昂贵失败和主路径回归。",
+          "requiredCapabilities": ["test-automation"],
+          "prerequisites": ["主路径已用真实数据实现。"],
+          "actions": ["按失败成本排序测试场景。", "在合适层级补充单元、集成和 Playwright 测试。", "故意制造失败，确认测试会红。", "恢复后保存完整通过输出。"],
+          "prompt": "为 {{projectName}} 制定风险驱动测试矩阵。技术栈 {{goldenStack}}。按单元、服务集成、数据库和 Playwright E2E 分层；每项说明保护的用户风险、夹具、失败断言和运行命令。优先覆盖主路径、权限、输入校验、并发/重复提交、空状态和恢复。",
+          "commands": [],
+          "expectedOutputs": ["风险测试矩阵", "关键自动化测试", "可复现测试输出"],
+          "acceptanceCriteria": ["主路径破坏时至少一项自动测试失败。", "测试不依赖不可控的线上数据或执行顺序。"],
+          "failureModes": [{"symptom": "测试全绿但主路径明显损坏。", "likelyCause": "只断言实现细节或静态渲染。", "recovery": "从用户结果写失败用例，先确认旧测试无法捕获，再增加行为级断言。"}],
+          "evidenceRequirements": ["红—绿验证记录", "完整测试输出"]
+        },
+        {
+          "id": "run-browser-security-review",
+          "title": "执行真实浏览器、无障碍与安全验收",
+          "objective": "证明产品在接近用户的环境中可信，而非只证明接口返回成功。",
+          "requiredCapabilities": ["test-automation", "review-security"],
+          "prerequisites": ["关键自动测试通过。"],
+          "actions": ["在目标视口和真实浏览器走完主路径。", "检查键盘、可访问名称、对比度、加载和错误恢复。", "审查权限、输入、秘密、依赖和敏感数据日志。", "记录缺陷严重度并修复阻断项后复测。"],
+          "prompt": "为 {{projectName}} 生成发布前验收清单，覆盖桌面/移动视口、键盘、读屏语义、加载/空/错误状态、性能、认证授权、输入校验、秘密、依赖风险和日志隐私。每项必须包含操作、预期、实际、证据和严重度，不能把“页面能打开”当作通过。",
+          "commands": [],
+          "expectedOutputs": ["浏览器验收记录", "无障碍检查", "安全评审", "缺陷与已知限制"],
+          "acceptanceCriteria": ["阻断和高风险问题已修复或明确停止发布。", "每个通过结论都有操作与证据。"],
+          "failureModes": [{"symptom": "验收只检查了首页截图。", "likelyCause": "没有以用户任务和风险为单位。", "recovery": "按主路径步骤逐项记录输入、系统反馈、数据变化、失败恢复和证据。"}],
+          "evidenceRequirements": ["截图/录像或可复核日志", "安全与无障碍结论"]
+        }
+      ]
+    },
+    {
+      "id": "launch-product",
+      "mode": "loop",
+      "minimumAssessment": "若由平台自动部署，仍需确认配置、迁移、健康检查、回滚和责任人。",
+      "qualityGate": {
+        "level": "hard",
+        "criteria": ["正式地址可访问且主路径通过烟雾测试。", "部署可重复，故障时有已验证的回滚方案。"],
+        "requiredEvidence": ["正式环境地址", "发布与回滚记录", "健康检查"]
+      },
+      "steps": [
+        {
+          "id": "prepare-release-contract",
+          "title": "冻结发布、迁移与回滚契约",
+          "objective": "在生产变更前明确条件、顺序、责任和停止点。",
+          "requiredCapabilities": ["deployment", "operations"],
+          "prerequisites": ["质量硬门通过且已知限制获批准。"],
+          "actions": ["列出构建、环境变量、域名、数据库迁移和外部服务依赖。", "定义发布前检查、烟雾测试和负责人。", "写出数据兼容、回滚步骤和触发阈值。"],
+          "prompt": "为 {{projectName}} 生成发布 Runbook。目标是 deployable MVP，技术栈 {{goldenStack}}。包含发布前检查、备份、环境变量、迁移顺序、部署、健康检查、烟雾测试、观察窗口、失败阈值、回滚步骤、数据恢复和责任人。所有破坏性动作必须要求人工确认。",
+          "commands": [],
+          "expectedOutputs": ["发布 Runbook", "迁移与回滚计划", "发布检查表"],
+          "acceptanceCriteria": ["每个高风险动作都有负责人、前置检查和回退。", "回滚说明同时覆盖应用版本与数据兼容。"],
+          "failureModes": [{"symptom": "回滚只写“重新部署旧版本”。", "likelyCause": "忽略数据库迁移和配置兼容。", "recovery": "逐项检查代码、schema、数据、环境变量和外部服务是否可逆，并制定向前修复备选。"}],
+          "evidenceRequirements": ["经人工确认的发布检查表"]
+        },
+        {
+          "id": "deploy-observe-rollback",
+          "title": "上线、观察并验证回滚能力",
+          "objective": "完成可复核的正式发布，并在异常时快速恢复。",
+          "requiredCapabilities": ["deployment", "operations"],
+          "prerequisites": ["发布 Runbook 已由负责人确认。"],
+          "actions": ["按 Runbook 人工执行部署并逐项记录结果。", "运行健康检查和正式环境主路径烟雾测试。", "在观察窗口检查错误、延迟和关键行为。", "达到失败阈值时停止并执行回滚。"],
+          "prompt": "作为发布观察员，按已确认 Runbook 为 {{projectName}} 生成逐项记录表。每一步要求填写时间、操作者、实际结果、证据和下一决定；不得代替人执行部署。包含正式 URL、版本标识、迁移结果、烟雾测试、监控快照、异常阈值和回滚结果。",
+          "commands": [],
+          "expectedOutputs": ["可访问正式环境", "发布记录", "健康与烟雾测试结果", "回滚验证记录"],
+          "acceptanceCriteria": ["正式环境版本可识别，主路径真实通过。", "故障检测和回滚责任清晰，恢复结果可验证。"],
+          "failureModes": [{"symptom": "部署成功但无人确认用户主路径。", "likelyCause": "把平台状态等同于产品可用。", "recovery": "立即执行正式环境烟雾测试，检查真实数据写入、读取和错误恢复。"}],
+          "evidenceRequirements": ["正式 URL、版本与烟雾测试证据", "观察窗口结论"]
+        }
+      ]
+    },
+    {
+      "id": "learn-iterate",
+      "mode": "loop",
+      "minimumAssessment": "若暂无真实用户，仍需定义首批观察指标、反馈入口和下一轮继续/调整/停止日期。",
+      "qualityGate": {
+        "level": "hard",
+        "criteria": ["能回答用户是否获得首要结果。", "下一轮决定由真实行为、反馈和失败模式支持。"],
+        "requiredEvidence": ["关键行为数据", "反馈分类", "继续/调整/停止决定"]
+      },
+      "steps": [
+        {
+          "id": "observe-user-outcomes",
+          "title": "观测用户是否获得核心结果",
+          "objective": "收集最少但足以驱动取舍的行为与反馈证据。",
+          "requiredCapabilities": ["analytics", "feedback-learning"],
+          "prerequisites": ["正式环境稳定且用户可访问。"],
+          "actions": ["为首要结果定义事件、漏斗和护栏。", "建立反馈入口并保护隐私。", "按固定周期检查完成率、失败点和重复使用。", "把反馈连接到行为证据而非按声音大小排序。"],
+          "prompt": "为 {{projectName}} 设计最小学习系统。首要结果：{{primaryOutcome}}；成功标准：{{successCriteria}}。输出事件字典、核心漏斗、护栏、隐私边界、反馈问题、每周检查表和数据不足时的替代研究方法。不要收集与决策无关的个人数据。",
+          "commands": [],
+          "expectedOutputs": ["关键行为事件与漏斗", "反馈收集方案", "首轮使用证据"],
+          "acceptanceCriteria": ["每个事件都对应一个产品决定。", "能定位主路径最大流失或失败点。"],
+          "failureModes": [{"symptom": "仪表盘指标很多但无法决定下一步。", "likelyCause": "先埋点后定义决策。", "recovery": "为每个指标写“高/低分别采取什么行动”，删除没有行动规则的指标。"}],
+          "evidenceRequirements": ["事件定义、数据时间窗与隐私检查"]
+        },
+        {
+          "id": "run-learning-review",
+          "title": "复盘并作出下一轮取舍",
+          "objective": "将真实证据转成继续、调整或停止决定，而非自动扩张范围。",
+          "requiredCapabilities": ["feedback-learning", "analytics"],
+          "prerequisites": ["已积累一个约定周期的行为和反馈证据。"],
+          "actions": ["比较原假设、预期指标与实际结果。", "分类成功、失败、意外行为和证据不足。", "只选择一个最高价值改变进入下一循环。", "记录不做事项和下次复盘日期。"],
+          "prompt": "主持 {{projectName}} 的学习复盘。将证据分为支持、反对、意外和不足；比较 {{successCriteria}} 与实际结果；列出继续、调整、停止三个选项的收益、风险和证据。最终只推荐一个下一循环目标，并写出新的假设、验收门、非目标和复盘日期。",
+          "commands": [],
+          "expectedOutputs": ["学习复盘", "继续/调整/停止决定", "下一循环唯一目标"],
+          "acceptanceCriteria": ["决定明确引用行为或反馈证据。", "下一循环只有一个优先结果，并保留非目标。"],
+          "failureModes": [{"symptom": "复盘输出长功能愿望清单。", "likelyCause": "没有按证据和机会成本取舍。", "recovery": "给每项改变写支持证据、预期结果和不做成本，只保留证据最强的一项。"}],
+          "evidenceRequirements": ["决定日志与下一次复盘日期"]
+        }
+      ]
+    }
+  ]
+}

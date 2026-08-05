@@ -1,0 +1,203 @@
+{
+  "name": "安全边界、兼容性与渐进落地路线",
+  "category": "决策",
+  "scope": "评估 Capability Atlas 从本机只读目录工具扩展为 MCP Server 及网页调用本机 AI CLI 后的攻击面、兼容性和落地顺序；覆盖回环 HTTP、Origin/CSRF/DNS rebinding、子进程、目录权限、提示注入、日志、并发、审批、取消、回退和验收。不在本项实现代码，也不把“项目不要求 API key”误写成免登录、免费、离线或不向模型供应商传输数据。",
+  "status_as_of": "截至 2026-08-03，仓库仍是 Capability Atlas 0.2：Node.js 20+、默认仅监听 127.0.0.1、无第三方 npm 依赖、无 MCP、无模型调用、无鉴权、无子进程 Agent。MCP 2026-07-28 规范页面和安全指南已经发布；[不确定]各 Host 与 TypeScript SDK 对无握手、无协议 session、server/discover 等变化的实际支持，因此实施时仍需锁版，并保留 2025-11-25 兼容 fixture。",
+  "current_entrypoints": [
+    "Finder：双击 prototype/启动能力测绘台.command；脚本检查 Node.js 20，后台打开 http://127.0.0.1:4317，前台 exec node server.mjs。",
+    "npm 网页：在 prototype 运行 npm start，映射为 node server.mjs。",
+    "CLI 网页：node cli.mjs serve，调用 startServer()。",
+    "CLI 只读任务：npm run scan、npm run plan -- \"目标\"、可选 --full/--json；均不调用模型。",
+    "HTTP/网页：同源静态页面及 /api/health、/api/scan、/api/plan、/api/export；当前没有 /mcp 或 /api/ai 路由。"
+  ],
+  "current_data_flow": [
+    "roots.mjs 组合已知用户根、项目根、环境变量根和最多 20 个自定义根；当前只拒绝磁盘根与整个主目录。",
+    "scanner.mjs 有界遍历 SKILL.md，单根最多 2,000 份、单文件最多读取 512 KiB，解析 frontmatter，正文前 24,000 字符仅进入进程内 searchText，使用 SHA-256 与 realpath 标注副本、冲突和别名。",
+    "matcher.mjs 用人工维护的 Web 产品流程及确定性文本证据生成地图；exporter.mjs 输出 JSON/Markdown。",
+    "publicInventory 在 HTTP 返回前移除 searchText，因此网页和工作区备份不含 Skill 正文；但名称、描述和绝对路径会进入浏览器。",
+    "app.js 通过同源 fetch 调用 API；workspace.js 把目标、自定义根和人工判断写入 localStorage。服务端 inventory 仅为内存缓存，并以相同根集合合并并发扫描 Promise。"
+  ],
+  "existing_ai_or_mcp": "仓库内不存在 MCP Client/Server、AI SDK、模型配置、Authorization、CSRF token 或 child_process。当前所谓 plan 是确定性匹配。机器上另有可被未来适配器调用的官方 CLI，但它们不是当前项目能力：Claude Code 与 Gemini CLI 可启动，Homebrew Codex 包装器损坏，ChatGPT.app 内置 Codex 二进制可启动。",
+  "repository_evidence": [
+    "/Users/mz/dev/skillsmap/prototype/server.mjs:20-45：inventory 缓存与同键扫描合并；尚无 Agent 队列。",
+    "/Users/mz/dev/skillsmap/prototype/server.mjs:47-67：JSON no-store 与 1 MB 请求上限。",
+    "/Users/mz/dev/skillsmap/prototype/server.mjs:69-87：静态路径 resolve 后做目录包含检查。",
+    "/Users/mz/dev/skillsmap/prototype/server.mjs:90-163：现有 API 没有 Host、Origin、CSRF nonce、Authorization 或速率校验；异常响应会直接返回 error.message。",
+    "/Users/mz/dev/skillsmap/prototype/server.mjs:166-179：默认 HOST=127.0.0.1、PORT=4317。",
+    "/Users/mz/dev/skillsmap/prototype/lib/roots.mjs:22-41：自定义根最多 20 个，只拒绝文件系统根和整个 home。",
+    "/Users/mz/dev/skillsmap/prototype/lib/scanner.mjs:51-109：遍历会跟随符号链接目录但未强制 realpath 留在配置根内。",
+    "/Users/mz/dev/skillsmap/prototype/lib/scanner.mjs:112-163：有界读取、正文索引与绝对路径记录。",
+    "/Users/mz/dev/skillsmap/prototype/lib/scanner.mjs:203-268：扫描上限及 publicInventory 去除 searchText。",
+    "/Users/mz/dev/skillsmap/prototype/public/app.js:87-99、574-648：动态内容主要经 textContent 创建，未发现 innerHTML 注入点。",
+    "/Users/mz/dev/skillsmap/prototype/public/app.js:766-821：同源 scan/plan/export POST；没有执行型接口。",
+    "/Users/mz/dev/skillsmap/prototype/test/server.test.mjs:9-79：只覆盖健康、过宽根拒绝和正文 sentinel 不外泄；尚无 Origin/CSRF/子进程测试。",
+    "/Users/mz/dev/skillsmap/prototype/VALIDATION.md:30-44：现有 14/14 测试与浏览器验收基线。",
+    "本机只读探针：Node 26.3.1、npm 11.16.0；Claude Code /Users/mz/.local/bin/claude 2.1.142；Gemini /opt/homebrew/bin/gemini 0.46.0；/opt/homebrew/bin/codex 对应 npm 包 0.129.0 但 vendor 可执行文件缺失；/Applications/ChatGPT.app/Contents/Resources/codex 为可运行的 0.146.0-alpha.9.2；未发现 ollama。"
+  ],
+  "role_model": [
+    "首选：SkillsMap 是只读 stdio MCP Server，现有 Codex/Claude/Gemini 等 AI Host 是 MCP Client、模型所有者、登录与审批所有者；项目只提供 scan/search/map/export 工具，不代理供应商凭据。",
+    "现有网页继续作为独立本地 UI；它不是 MCP Host。只有第二阶段显式启用本机 Agent Gateway 后，Node 服务才同时承担网页到官方 CLI 协议的受控桥接。",
+    "Codex app-server、Gemini ACP、Claude stream-json/Agent SDK 属于 Agent 控制协议或事件接口，不应伪装成 MCP。MCP 用于向外部 Host 暴露 SkillsMap 能力，Agent 协议用于网页控制一个本机 AI Agent。",
+    "MCP Apps 是可选 UI 资源：支持它的 Host 在沙箱 iframe 中渲染；不支持它的 Host 仍必须用结构化文本完成相同只读工具工作流。",
+    "执行权限不能从浏览器、MCP Server 或 Skill 内容隐式继承；最终授权者始终是用户，审批必须绑定 requestId、provider、cwd、具体命令或 diff，并能拒绝。"
+  ],
+  "protocol_options": [
+    "stdio MCP：MVP 首选。Host 直接启动固定 node 脚本，没有监听端口；官方安全指南也建议本地 Server 优先 stdio。stdout 只能写协议帧，日志写 stderr。",
+    "Streamable HTTP MCP：仅在确有多个客户端共享常驻进程时增加。必须独立 /mcp 路由、Origin/Host 校验、回环绑定和认证；不能把现有 REST API 直接称为 MCP。",
+    "MCP 2025-11-25：作为首发兼容基线，支持 initialize、Mcp-Session-Id、POST/GET 与可选 SSE；会话 ID 不能当身份凭据。",
+    "MCP 2026-07-28：当前规范取消 initialize 与协议 session，改为每请求携带版本/客户端信息并用 server/discover。[不确定]目标 SDK/Host 的实际采纳度；适配层应同时测试 2025-11-25 与 2026-07-28 fixture，再按目标 Host 矩阵决定兼容范围。",
+    "MCP Apps：稳定扩展可声明 ui:// HTML 资源并在 Host 沙箱 iframe 中运行；Host 支持有差异，必须能力协商和文本降级。",
+    "网页 Agent：Codex 首选 app-server 的 stdio JSONL/JSON-RPC；Gemini 可用 ACP 的 stdio JSON-RPC；Claude 可用 stream-json 或官方 Agent SDK。简单一次性只读问答可暂用各 CLI 的 JSON/JSONL 模式，但不能以解析自然语言终端文本作为长期协议。",
+    "网页流式：同源 POST 创建 turn，SSE 或受控 WebSocket 只推送该 turn 的规范化事件；取消使用独立 POST。传输断开不等于进程自动退出，ProcessManager 必须显式取消。"
+  ],
+  "ui_strategy": "保留现有独立网页为兼容基线；MCP Apps 作为 Host 内渐进增强，并保留纯文本/结构化结果。网页 Agent 面板只在 /api/features 明确返回 enabled=true 后出现，默认完全不注册执行路由。所有网页/API 必须同一个 127.0.0.1 实际端口，禁止远程 HTTPS 页面跨源直连本机桥接；这样也避免依赖正在演进的浏览器 Local Network Access 行为。[不确定]不同 Host 对 MCP Apps 2026-01-26 扩展、CSP、工具可见性和全屏能力的支持仍需矩阵实测。",
+  "session_and_streaming": [
+    "MCP 只读工具尽量无状态、短请求和分页；业务地图状态继续由显式 mapId/输入携带，不依赖连接身份。",
+    "[不确定]协议兼容范围：2025-11-25 使用初始化和 session；2026-07-28 改为无协议 session 与 server/discover。实现不得把两者内部状态混用，契约层按 protocolVersion 分派。",
+    "Agent 会话用密码学随机 sessionId/turnId，服务端对象绑定启动期 nonce 与固定 cwd；ID 只作路由句柄，不作认证。默认不持久化供应商原始事件或 prompt。",
+    "同一 session 最多一个活动 turn，全局 Agent 默认并发 1、上限 2；其余进入有界队列，队列满返回 429。",
+    "取消：UI 取消、客户端断开、超时或服务退出都触发 AbortController；先 SIGTERM，短暂宽限后终止整个受控进程组，最后 SIGKILL，并回收监听器与临时文件。",
+    "审批：只读阶段固定 provider 的只读/plan sandbox，不能弹出无人处理的终端提示；写入阶段只有协议适配器能把审批事件显示到网页，用户逐次批准或拒绝，禁止默认 always、YOLO、bypassPermissions 或 dangerously-bypass。",
+    "错误恢复：JSONL 畸形、未知事件、CLI 退出、输出超限和心跳超时均以稳定错误码结束 turn；仅对可重试过载做带抖动退避，不自动重放可能有副作用的 turn。"
+  ],
+  "context_and_output_limits": [
+    "默认 MCP/Agent 上下文只含目标、人工选择的少量 Skill 元数据和短证据；不自动加入全部 inventory、绝对路径或 SKILL.md 正文。",
+    "search/list 必须 cursor 分页，默认 20、硬上限 100；先按 provider/scope/status 过滤后再返回。",
+    "正文访问拆成显式 read_skill_excerpt，按稳定 ID、行/字节范围读取，建议单项最多 8 KiB、单 turn 累计最多 64 KiB，并以“不可信数据”边界包裹。",
+    "浏览器 prompt 建议最多 8 KiB；单 turn 事件/输出设置字节与事件数双上限，例如 8 MiB 或 10,000 事件；stderr 只保留经过脱敏的有界内存尾部。",
+    "达到上限必须截断并给结构化标记，不能静默丢失，也不能把超长输出再次喂给模型总结而绕过限制。"
+  ],
+  "zero_key_definition": "项目不要求用户粘贴、保存或在环境变量配置外部 LLM API key。MCP 优先路径由用户已登录的 AI Host 提供模型；网页桥接由官方本机 CLI 自己读取其既有 Keychain/OAuth/订阅登录态。Node 网关不读取、复制、展示或转发 token。该定义不代表无需供应商账号/订阅、不计额度、完全离线，也不代表所选 prompt、代码或 Skill 摘要不会传到供应商云。",
+  "provider_matrix": [
+    "Codex：本机 ChatGPT.app 内置 0.146.0-alpha.9.2 可运行并提供 app-server、mcp-server、exec JSONL、read-only/workspace-write sandbox、审批、取消和 ChatGPT managed OAuth；最适合首个网页适配器。Homebrew /opt/homebrew/bin/codex 当前损坏，不可只按 command -v 判健康。",
+    "Claude Code：本机 2.1.142 可运行；支持 -p、json/stream-json、session resume、tools allow/deny、plan/default 等权限。官方明确 -p 非交互会跳过工作区 trust，因此网页 MVP 必须固定可信 cwd、限制 tools 并默认 plan/只读，不能使用 dangerously-skip-permissions。Pro/Max 可用账号登录而无需项目 API key。",
+    "Gemini CLI：本机 0.46.0 可运行；支持 stream-json、--acp、session/cancel、approval-mode 与 sandbox。官方仓库 2026-06-18 公告称个人免费/Pro/Ultra 账号已停止由 Gemini CLI 服务，企业许可与 API key 不受影响；因此个人零 Key 路径目前不应作为默认。[不确定]ACP 在此版本与具体企业登录态的实际可用性须显式健康测试。",
+    "本地模型：Codex 帮助显示可用 --oss 配合 Ollama/LM Studio；可实现真正无云 API key。当前机器未发现 ollama，模型质量、中文能力、工具调用、安全隔离和硬件开销均未验证。"
+  ],
+  "local_runtime_probe": "探针只执行 command -v、--version 和 --help，没有读取账号、Keychain、配置正文或发起收费模型请求。Node 26.3.1 满足项目 >=20；Claude 2.1.142 与 Gemini 0.46.0 可启动；Homebrew Codex 0.129.0 的 vendor 目录为空而报 ENOENT；ChatGPT.app 内置 Codex 0.146.0-alpha.9.2 可启动；未发现 Ollama。[不确定]所有 CLI 的实际登录态、额度、首轮模型健康、审批事件和长会话稳定性仍未探测。发现逻辑必须验证 realpath、版本命令退出码和最小协议握手，不能相信 PATH 首个命中。",
+  "licensing_and_terms": "MCP Server 本身不代理模型凭据，条款风险最低。网页桥接应只通过供应商公开的 CLI/Agent 协议启动用户本人的官方 CLI，绝不读取或复用底层 OAuth token。OpenAI 与 Anthropic官方资料允许各自 CLI 使用 ChatGPT/Claude 订阅登录；Gemini 官方 FAQ 明确禁止第三方软件收割或搭便车使用 Gemini CLI OAuth。[不确定]把官方 CLI 作为个人本地工具的受控前端与把它打包、分发或供多用户/商业产品调用并非同一许可场景；发布前需逐供应商复核当时条款，不能承诺订阅凭据可用于产品化后端。",
+  "offline_option": "可选后端是本地模型运行时，例如 Codex --oss 对接 Ollama/LM Studio；需要本地下载模型、禁止出站网络、验证工具协议并单独做质量/资源基准。当前未安装 Ollama，[不确定]本机硬件容量、中文效果与复杂工作流成功率，所以离线模式只能作为后续可选项，不能阻塞 MCP/已登录 CLI 路径。",
+  "trust_boundary_change": [
+    "当前边界是“本机目录只读 -> 有界解析/确定性匹配 -> 去正文后给网页”；即使存在恶意 Skill，项目也不执行其指令。",
+    "加入 stdio MCP 后，结果会进入外部 Host 的模型上下文；风险从本机展示扩大为隐私外发和提示注入，但只读工具仍不需要项目持有模型凭据。",
+    "加入网页 Agent 后，Node 进程可启动与当前用户同权限的 CLI，模型可建议或执行命令；任何 XSS、CSRF、DNS rebinding、恶意 Skill 正文、污染 PATH 或错误审批都可能升级为本机代码执行与数据外泄。",
+    "因此 Agent Gateway 必须是独立能力域：默认关闭、固定 provider 模板、最小 cwd/环境、沙箱、逐次审批、强制资源上限和可杀死进程；不能因为服务只监听 localhost 就视为可信。"
+  ],
+  "browser_localhost_security": [
+    "继续硬绑定 127.0.0.1，忽略或拒绝把 Agent 模式配置到 0.0.0.0、局域网地址及任意 HOST；页面始终使用字面量 127.0.0.1，避免 localhost 的 IPv4/IPv6差异。",
+    "所有请求先验证 Host 为启动时的 127.0.0.1:实际端口，防止 DNS rebinding；所有 /mcp 与 /api/ai 请求精确校验 Origin，只接受同源，非法或 null Origin 返回 403。",
+    "启动时生成至少 128 位随机 nonce，仅保存在服务内存和同源页面内存；执行型请求必须在自定义 header 携带，nonce 不进入 URL、localStorage、下载备份、命令行参数或日志。跨源简单表单即使能发送 POST，也因缺 nonce/Origin 失败。",
+    "设置严格 CSP：default-src 'self'、script-src 'self'、connect-src 'self'，禁用 object/base/frame 或使用 frame-ancestors 'none'；保持动态数据使用 textContent。",
+    "不要设置 Access-Control-Allow-Origin:*，预检只允许同源所需 header/method；对执行路由设置 no-store、nosniff、Referrer-Policy 与适当 Permissions-Policy。",
+    "浏览器 Local Network Access/Private Network Access 只能视为额外防线，不能替代服务端 Origin、Host、nonce 与认证。MCP 规范也明确要求 Streamable HTTP 验证 Origin、回环绑定和适当认证。"
+  ],
+  "process_security": [
+    "provider 注册表只接受 codex、claude、gemini 等枚举 ID；每个 ID 在启动时解析、realpath 并健康验证固定可执行文件。HTTP 不能提交 command、可执行路径、任意 argv、shell 片段或环境变量名。",
+    "使用 child_process.spawn/execFile 的 argv 数组且 shell:false；prompt 通过 stdin/协议帧发送，避免 shell 注入、进程列表泄漏和参数长度问题。Node 官方说明 execFile 默认不启动 shell。",
+    "cwd 必须是服务端批准并 canonicalize 的明确项目目录，不能为 home、/、不存在目录或经符号链接逃逸的目录；Web 第一阶段固定为 SkillsMap 工作区，不允许请求任意 cwd。",
+    "环境变量采用最小 allowlist，例如 HOME、TMPDIR、LANG/LC_* 与干净 PATH，加上用户明确配置的供应商 config home；绝不默认传递整个 process.env，尤其不传 API_KEY、TOKEN、AWS、GITHUB 等凭据。",
+    "Agent CLI 固定 read-only/plan sandbox、禁网或按域最小放行；写权限是独立功能开关并经协议审批。禁止 YOLO、bypassPermissions、danger-full-access 和自动永久批准。",
+    "请求设置启动、空闲和总时限；限制 stdin/stdout/stderr/事件数；全局并发默认 1、最大 2，并设有界队列和每 nonce 速率限制。",
+    "取消与关机终止完整进程树并等待 close，避免孤儿进程；异常退出不自动重放。macOS 首发后再做 Windows 适配，因为 Node 官方指出 .bat/.cmd 不能直接用无 shell 的 execFile，Windows 必须解析到底层 .exe/node 脚本而不是回退 shell:true。"
+  ],
+  "privacy_and_prompt_injection": [
+    "把 Skill 名称、description、正文、路径、仓库文件、网页内容和 Agent 输出全部视为不可信数据，不视为系统/开发者指令。",
+    "保持 publicInventory 去正文；默认 AI 只收到用户明确选择的元数据和短证据。完整 SKILL.md 不自动入模，读取摘录需要单独用户动作、字节上限和醒目的“不可信内容”标记。",
+    "提示注入不能只靠字符串清洗解决；关键控制是工具最小化、只读 sandbox、网络隔离、用户审批、数据出站预览和拒绝跨边界操作。官方 MCP 规范要求工具调用有人在环，Claude 安全文档也明确建议不要把不可信内容直接管道给 Agent。",
+    "CLI 登录凭据只能由官方 CLI/系统 Keychain管理；Node 不读、不复制、不返回 auth 文件，不在健康接口显示账号身份。",
+    "默认不持久化 prompt、模型响应、原始 JSONL、stderr、Skill 正文或 token；浏览器会话在内存，用户显式导出前先列出包含内容。日志只记录脱敏元数据。",
+    "Agent 输出渲染必须使用 textContent/受审 Markdown 渲染器，禁用原始 HTML、javascript:/data: URL 和未经允许的外链；避免模型输出形成 XSS 后再窃取 nonce。"
+  ],
+  "observability_and_testing": [
+    "健康探针分层：/api/health 只报告服务版本、只读/Agent feature 状态；provider probe 报 absent/present/broken/handshake-ready、路径类别与版本，不报告账号、token 或配置正文，也不自动消费模型额度。",
+    "结构化审计只记时间、requestId、provider、协议/CLI版本、操作类型、审批结果、排队/耗时、退出码、取消原因、输入/输出字节数；prompt、正文、Authorization、nonce、环境变量和原始 stdout/stderr 默认不落盘。",
+    "MCP 契约测试覆盖 2025-11-25 initialize/session 与 2026-07-28 server/discover/每请求版本 fixture、tools list/call、分页、取消、stdout 纯净和不支持版本错误。",
+    "fake CLI 覆盖正常 JSONL、分块 UTF-8、畸形行、未知事件、超大 stdout/stderr、挂起、忽略 SIGTERM、非零退出、审批、取消与并发饱和；测试禁止调用真实收费模型。",
+    "HTTP 安全测试用恶意跨源页面验证 Host、Origin、null Origin、无/错 nonce、CORS 预检、DNS rebinding Host、表单 CSRF、速率限制和 CSP；所有执行请求必须失败关闭。",
+    "隐私回归在 MCP、REST、SSE、日志、localStorage 和导出中放置 PRIVATE_BODY_SENTINEL、FAKE_TOKEN、FAKE_PROMPT，默认通道均不得出现。",
+    "浏览器验收覆盖启动/流式/取消/审批拒绝、刷新后的孤儿清理、Agent disabled UI、无 MCP Apps Host 的文本降级；现有 14/14 测试、桌面/移动布局与确定性地图结果必须保持。"
+  ],
+  "options_comparison": [
+    "方案一——只读 stdio MCP：优点是攻击面最小、复用现有 scanner/matcher/exporter、项目零模型 key、Host 自带对话/审批；缺点是需要 Host 配置且 MCP/MCP Apps 版本有差异。复杂度低到中、核心成熟度最高、适配度最高，第一优先。",
+    "方案二——现有网页 + Codex app-server stdio：优点是保留完整网页体验、官方协议有会话/流式/审批/取消、可复用 ChatGPT managed 登录；缺点是新增高权限子进程、协议仍有实验面且本机有两套 Codex 安装。复杂度中高、适配度高，作为受控第二阶段。",
+    "方案三——网页 + Claude/Gemini CLI JSONL/ACP：优点是多供应商；缺点是权限/事件/登录/条款差异大，Claude -p 跳过 trust，Gemini 个人零 Key 路径已变化。复杂度高、成熟度不一，仅在 provider adapter 与契约测试后增加。",
+    "方案四——本地 Streamable HTTP MCP：优点是多客户端共享；缺点是增加 localhost、认证、Origin 与版本双栈复杂度。当前没有共享常驻需求，不作为首发。",
+    "方案五——MCP Apps：优点是在支持的 Host 内提供沙箱网页和对话上下文；缺点是 Host 支持不齐且现有多文件前端需要 transport 解耦/打包。作为 stdio MCP 的渐进增强，不替代独立网页。",
+    "方案六——本地模型：优点是真正离线、无供应商账号；缺点是当前未安装、能力和硬件未验证。后续可选，不作为 MVP 阻塞项。"
+  ],
+  "recommended_architecture": "采用“双入口、单核心、执行隔离”：先把 scanner/matcher/exporter 抽为纯本地 catalog service；入口 A 是只读 stdio MCP Server，供已登录 AI Host 调用；入口 B 保留现有同源网页。网页若确需自由 AI，再通过默认关闭的 /api/ai Gateway 调用独立 ProviderAdapter/ProcessManager，首个适配器使用 ChatGPT.app 内置 Codex app-server stdio，固定 read-only sandbox、固定 cwd、内存会话、审批与取消。MCP Apps 只复用视图/工具作为可选增强。REST、MCP 与 Agent 适配器共享业务函数，但 HTTP Server 不直接持有任意命令执行能力。",
+  "repository_change_points": [
+    "prototype/package.json：增加 mcp、test:mcp、test:security、test:agent 脚本并锁定官方 SDK；不改变 npm start 默认行为。",
+    "prototype/lib/catalog-service.mjs（新增）：承接 resolvedRoots、inventory cache、分页 search、buildPlan/export，供 REST 与 MCP 共用。",
+    "prototype/mcp-server.mjs（新增）：固定 stdio transport、只读 tools/resources、协议版本适配、stdout 纯净。",
+    "prototype/lib/http-guard.mjs（新增）：Host/Origin 校验、启动期 nonce、请求速率/大小、统一安全响应头与稳定错误码。",
+    "prototype/lib/agent/provider-registry.mjs（新增）：provider 枚举、固定 absolute/realpath 可执行文件、版本/握手健康检查和 argv/env 模板。",
+    "prototype/lib/agent/process-manager.mjs（新增）：队列、并发、超时、输出上限、进程树取消、资源清理和脱敏事件。",
+    "prototype/lib/agent/codex-app-server.mjs（阶段二新增）：实现 initialize、thread/turn、事件规范化、审批和 interrupt；后续再加 claude-stream-json.mjs 与 gemini-acp.mjs。",
+    "prototype/server.mjs：只在 CAPABILITY_ATLAS_LOCAL_AI=1 时安装 /api/ai/features、sessions/turns/events/cancel 路由；默认无路由；先对所有 API 加 Host/Origin/nonce 边界，再连接 ProcessManager。",
+    "prototype/lib/roots.mjs 与 lib/scanner.mjs：canonicalize 自定义根并禁止符号链接逃逸；给正文摘录单独显式服务，不扩大 publicInventory。",
+    "prototype/public/app.js、index.html、styles.css：增加 feature-gated Agent 面板、流式状态、审批/取消和数据出站预览；nonce 仅内存；继续用 textContent。",
+    "prototype/test/http-security.test.mjs、mcp.test.mjs、agent-bridge.test.mjs 与 test/fixtures/fake-agent.mjs（新增）：协议、安全、隐私、并发与进程生命周期回归。",
+    "prototype/README.md、VALIDATION.md、启动能力测绘台.command：分别记录网页/MCP/Agent 启用方式、准确零 Key 含义、支持矩阵、风险、回退和 Finder 启动后的实际健康等待。"
+  ],
+  "rollout_plan": [
+    "阶段 0——冻结基线：新增威胁模型与正文/token/prompt sentinel；确认 npm start、Finder、scan/plan/export 与 14/14 测试不变。所有 AI feature 默认 off。",
+    "阶段 1——只读 stdio MCP：仅 status/search/get_metadata/build_map/export；无 CLI Agent、无 HTTP MCP。以 2026-07-28 作为当前规范目标，同时保留 2025-11-25 fixture；[不确定]最终默认与兼容范围应以目标 Host/SDK 实测矩阵为准。",
+    "阶段 2——先筑网页安全边界：Host/Origin/nonce/CSP/速率/稳定错误码、provider probe 和 fake CLI；CAPABILITY_ATLAS_LOCAL_AI 默认 0，真实模型尚不接入。",
+    "阶段 3——Codex 只读网页桥接：固定 ChatGPT.app 内置 Codex app-server、固定项目 cwd、read-only、全局并发 1、内存会话、流式、取消；不支持写命令，用户显式点击后才发起并消耗额度。",
+    "阶段 4——审批后执行：只有审批事件、diff/命令完整展示、拒绝/取消/超时/孤儿清理全部通过，才开放 workspace-write 独立开关；永久批准与危险模式继续禁用。",
+    "阶段 5——可选兼容：按需求添加 Claude adapter、Gemini 企业 ACP、本地模型及 MCP Apps；每个 provider 有独立开关和支持矩阵。没有多客户端需求不做 HTTP MCP。",
+    "回退：任一安全/隐私/崩溃指标失败立即关闭 provider 或 CAPABILITY_ATLAS_LOCAL_AI，路由返回 404/feature-disabled，停止并清理子进程；移除 Host 的 MCP 配置即可回到 0.2。业务核心和 localStorage schema 不依赖 Agent，因此无需数据迁移或破坏性回滚。"
+  ],
+  "acceptance_criteria": [
+    "默认启动时进程树中没有 AI CLI，/api/features 报 Agent 关闭，/api/ai/* 不可调用；现有只读网页行为与 14/14 测试全通过。",
+    "MCP stdio stdout 100% 为合法协议帧；默认响应不含 searchText、完整 Skill 正文、PRIVATE_BODY_SENTINEL 或未选择绝对路径；1,000+ 项必须分页。",
+    "跨源、Origin:null、错误 Host、无/错 nonce、CORS 简单/预检和 DNS rebinding 测试对所有执行路由均返回 403，且 fake CLI 启动次数为 0。",
+    "HTTP 只能提交 provider ID 与结构化参数；任何 command/path/argv/env 注入被 schema 拒绝。实际 spawn 断言 shell=false、固定 realpath binary、固定 cwd、最小 env。",
+    "Agent 默认 read-only/plan；未经网页逐次批准，不能写工作区、执行副作用命令、访问额外目录或开放网络。禁止危险绕过标志。",
+    "取消、总超时、空闲超时、浏览器断开和服务退出后，规定宽限时间内子进程/孙进程归零；重复取消幂等，无孤儿、僵尸、悬挂 SSE。",
+    "全局并发 1、硬上限 2、队列有界；饱和返回 429/可重试提示，不突破进程数；输出超限能终止并给明确截断/错误状态。",
+    "日志、health、SSE、localStorage 和下载备份不含 FAKE_TOKEN、FAKE_PROMPT、Skill 正文或完整环境变量；默认磁盘上不新增对话记录。",
+    "Codex adapter 至少通过版本握手、首 token、完成、拒绝审批、取消、崩溃与恢复契约；真实模型 smoke test 需用户主动触发且记录版本，不在自动测试消费额度。",
+    "MCP 兼容覆盖 2025-11-25 与 2026-07-28 fixture；不支持的版本稳定失败而非误解析。MCP Apps 缺失时文本工具功能等价。",
+    "自定义根 realpath 与每个发现文件保持在批准范围，符号链接逃逸测试被拒；AI 正文摘录必须用户显式选择并遵守单项/总量上限。",
+    "macOS 首发明确标注；Node 20/22/24/26 至少做单元/契约矩阵。Windows 不得以 shell:true 作为兼容捷径，未完成原生 launcher 测试前标为不支持 Agent bridge。"
+  ],
+  "recommendation": "GO，但严格分层：P0 先交付只读 stdio MCP，并让用户现有 AI Host 提供模型；P1 补齐现有 localhost 的 Host/Origin/nonce/CSP 安全地基；P2 才以默认关闭、只读、固定 Codex app-server 的方式做网页 Agent。不要首发 Streamable HTTP MCP、任意 CLI 命令、写权限、多 provider 或 OAuth 代理。2026-07-28 以兼容 fixture 跟进而非立即抛弃 2025-11-25。任何无法可靠承接审批/取消的 provider 只能做只读一次性问答，不能执行工具。",
+  "confidence": "总体结论高：当前代码、Node 子进程语义、MCP localhost 安全要求与官方 CLI 协议均有直接证据。对默认关闭、同源 nonce、固定 shell:false、最小权限、隐私回归和渐进开关的建议置信度高。[不确定]仍需实测 MCP 2026-07-28 的 Host/SDK落地、各 CLI 登录/条款、Codex alpha app-server 事件兼容、Gemini 企业 ACP、Windows launcher 与本地模型质量。",
+  "sources": [
+    "MCP 2025-11-25 传输与 Origin/回环/认证要求：https://modelcontextprotocol.io/specification/2025-11-25/basic/transports",
+    "MCP 2026-07-28 发布过程与无状态变化：https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/",
+    "MCP 本地 Server、stdio、沙箱与 HTTP token 安全指南：https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices",
+    "MCP 工具的人在环与分页要求：https://modelcontextprotocol.io/specification/draft/server/tools",
+    "MCP Apps 官方概览、沙箱与 Host 支持差异：https://modelcontextprotocol.io/extensions/apps/overview",
+    "MCP Apps 官方规范与文本降级：https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx",
+    "Node.js child_process 的 execFile、shell、timeout、maxBuffer 与 AbortSignal：https://nodejs.org/download/release/v22.17.0/docs/api/child_process.html",
+    "浏览器本地网络访问与 CSRF 风险：https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Local_network_access",
+    "浏览器同源策略与 CSRF token：https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy",
+    "OpenAI Codex app-server stdio、JSONL、审批、取消、认证和过载行为：https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md",
+    "OpenAI Codex MCP Server 实验状态：https://github.com/openai/codex/blob/main/codex-rs/docs/codex_mcp_interface.md",
+    "Anthropic Claude Code CLI JSON/stream-json 与权限参数：https://docs.anthropic.com/en/docs/claude-code/cli-usage",
+    "Anthropic Claude Code 安全、工作目录、提示注入与非交互 trust 边界：https://code.claude.com/docs/en/security",
+    "Anthropic Claude Code 订阅登录说明：https://docs.anthropic.com/en/docs/claude-code/getting-started",
+    "Gemini CLI ACP 的 stdio JSON-RPC、会话、取消和文件代理：https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/acp-mode.md",
+    "Gemini CLI sandbox 与目录边界：https://geminicli.com/docs/cli/sandbox/",
+    "Gemini CLI 关于第三方搭便车 OAuth 的官方 FAQ：https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/faq.md",
+    "Gemini CLI 个人账号服务变化的官方仓库公告：https://github.com/google-gemini/gemini-cli/discussions/28017",
+    "仓库代码证据：/Users/mz/dev/skillsmap/prototype/server.mjs、lib/roots.mjs、lib/scanner.mjs、public/app.js、test/server.test.mjs 与 VALIDATION.md",
+    "本机只读探针：2026-08-03 执行 command -v、--version、--help 及 Codex vendor 文件存在性检查；未读取登录账号或凭据。"
+  ],
+  "evidence_strength": "强：当前边界与缺口来自逐行仓库审计、现有 14 项测试和本机只读 CLI 探针；Origin/回环、stdio、本地 Server、工具审批来自 MCP 官方规范；spawn/execFile 来自 Node 官方文档；Codex/Claude/Gemini 协议与安全边界来自供应商官方文档或官方仓库。中：MCP 2026-07-28 的 Host/SDK 采用、订阅产品化许可和真实登录态必须锁版实测。",
+  "uncertain": [
+    "status_as_of",
+    "protocol_options",
+    "ui_strategy",
+    "session_and_streaming",
+    "provider_matrix",
+    "local_runtime_probe",
+    "licensing_and_terms",
+    "offline_option",
+    "rollout_plan",
+    "confidence"
+  ]
+}

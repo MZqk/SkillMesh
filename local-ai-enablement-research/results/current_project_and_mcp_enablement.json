@@ -1,0 +1,243 @@
+{
+  "name": "当前项目启用链路与 MCP 优先方案",
+  "category": "架构",
+  "scope": "覆盖当前仓库的真实启动链路、数据流、MCP 角色选择、传输和 MCP Apps UI；不把 MCP 误当成模型或通用 Agent 会话协议，也不在本项实现代码。",
+  "status_as_of": "截至 2026-08-03，Capability Atlas 0.2 是无第三方 npm 依赖的本机只读 Node.js 工具；MCP 2026-07-28 已转为无状态核心并包含 MCP Apps/Tasks 扩展，但目标 Host 与官方 SDK 的版本支持仍须契约测试。",
+  "current_entrypoints": [
+    {
+      "方式": "macOS Finder 双击",
+      "入口": "prototype/启动能力测绘台.command",
+      "行为": "检查 Node.js 20，后台打开 http://127.0.0.1:4317，前台 exec node server.mjs"
+    },
+    {
+      "方式": "npm 网页服务",
+      "入口": "cd prototype && npm start",
+      "行为": "package.json 将 start 映射为 node server.mjs"
+    },
+    {
+      "方式": "CLI 网页服务",
+      "入口": "node cli.mjs serve",
+      "行为": "调用 startServer()"
+    },
+    {
+      "方式": "CLI 只读扫描",
+      "入口": "npm run scan [-- --full]",
+      "行为": "输出扫描摘要或完整公开 inventory JSON"
+    },
+    {
+      "方式": "CLI 生成地图",
+      "入口": "npm run plan -- \"目标\" [--json]",
+      "行为": "执行确定性匹配并输出 Markdown 或 JSON，不调用模型"
+    }
+  ],
+  "current_data_flow": {
+    "服务端": "server.mjs 同源提供静态文件和 /api/health、/api/scan、/api/plan、/api/export；inventory 仅存在进程内缓存。",
+    "扫描": "roots.mjs 解析默认/环境变量/用户根，scanner.mjs 有界只读发现 SKILL.md、解析元数据、哈希去重；publicInventory 在返回浏览器前删除 searchText。",
+    "匹配": "matcher.mjs 读取人工维护的 web-product-workflow.json，用名称/description/正文的确定性权重打分；目标文本主要用于命名与边界提示。",
+    "浏览器": "app.js 先 scan 再 plan；workspace.js 将多地图和人工判断保存到 localStorage；JSON 备份在浏览器生成，Markdown 由服务端重建后下载。",
+    "信任边界": "当前只读取 Skill，不安装、修改或执行 Skill；默认监听 127.0.0.1。"
+  },
+  "existing_ai_or_mcp": {
+    "MCP": "无",
+    "模型调用": "无",
+    "AI_CLI_子进程": "无",
+    "API_key或Authorization": "无",
+    "当前plan语义": "确定性规则匹配，不是 AI 规划"
+  },
+  "repository_evidence": [
+    "/Users/mz/dev/skillsmap/prototype/package.json:7-15：start/scan/plan/test 与 Node >=20",
+    "/Users/mz/dev/skillsmap/prototype/启动能力测绘台.command:7-17：Node 检查、打开浏览器、启动 server.mjs",
+    "/Users/mz/dev/skillsmap/prototype/cli.mjs:20-33：scan、plan、serve 分支",
+    "/Users/mz/dev/skillsmap/prototype/server.mjs:90-180：HTTP 路由、回环默认值和只读日志",
+    "/Users/mz/dev/skillsmap/prototype/lib/scanner.mjs:203-268：有界扫描与 publicInventory 去正文",
+    "/Users/mz/dev/skillsmap/prototype/lib/matcher.mjs:164-298：人工模板的确定性匹配",
+    "/Users/mz/dev/skillsmap/prototype/public/app.js:766-834：网页 scan/plan/export 请求",
+    "/Users/mz/dev/skillsmap/prototype/README.md:81-89：当前明确不是通用 Agent 编排器"
+  ],
+  "role_model": {
+    "推荐拓扑A": "SkillsMap 作为本地 MCP Server；ChatGPT/Codex、Claude 或 Gemini 等现有 AI Host 负责模型、对话、审批和登录，SkillsMap 仅暴露小而清晰的只读 tools/resources。",
+    "推荐拓扑B": "需要 Host 内嵌界面时，MCP Server 同时提供 ui:// MCP Apps 资源；Host 在沙箱 iframe 中渲染，UI 经 postMessage/JSON-RPC 通过 Host 调用工具。",
+    "独立网页拓扑": "现有 Node 服务仍是同源 Web Server；若后续调用 AI CLI，它还要成为受信任的 Agent Gateway/MCP Client，此职责不属于纯浏览器。",
+    "不推荐拓扑": "让 MCP Server 依赖 Sampling 向 Host 借模型；Sampling 自 2026-07-28 起已弃用，新架构不应依赖它。",
+    "推理所有者": "拓扑A/B 中是外部 AI Host；现有独立网页无推理；只有第二阶段 Agent Gateway 才由本机 CLI Agent 持有推理和会话。"
+  },
+  "protocol_options": [
+    {
+      "选项": "stdio MCP",
+      "建议": "首选 MVP",
+      "理由": "Host 启动一个本地子进程，无监听端口和额外认证面；stdout 只能输出协议帧，日志必须到 stderr。"
+    },
+    {
+      "选项": "Streamable HTTP MCP",
+      "建议": "仅在需要多个本地客户端共享常驻服务时增加",
+      "理由": "可复用现有 Node HTTP 生命周期，但必须单设 /mcp、验证 Origin、仅监听回环并加入本地认证；不能把现有 REST 路由直接称为 MCP。"
+    },
+    {
+      "选项": "MCP 2026-07-28",
+      "建议": "用官方 SDK 跟随并显式做旧客户端兼容测试",
+      "理由": "该版取消 initialize/协议 session，改为每请求携带版本/能力并用 server/discover；HTTP 移除 GET stream，Apps 与 Tasks 成为扩展。"
+    },
+    {
+      "选项": "MCP Apps",
+      "建议": "作为 UI 渐进增强",
+      "理由": "工具和结构化结果必须在无 UI Host 中仍可用；Host 支持不一致，现有独立 Web 仍需保留。"
+    },
+    {
+      "选项": "MCP Tasks",
+      "建议": "只为长时间 Agent/导出任务且双方明确支持时采用",
+      "理由": "任务句柄、状态、输入请求和取消比长挂 tools/call 更适合长任务；首版只读扫描通常不需要。"
+    }
+  ],
+  "ui_strategy": {
+    "默认": "保留现有 http://127.0.0.1:4317 独立网页，保证无需兼容 Host 也能使用。",
+    "MCP优先增强": "把适合检查、筛选、确认的视图打包为单一或少量 ui:// 资源，并通过 MCP Apps bridge 调用 scan/search/plan/export 工具。",
+    "代码复用条件": "先把 app.js 对 fetch/localStorage 的直接依赖拆为 transport/service adapter；独立 Web 使用 REST adapter，MCP App 使用 App bridge adapter。",
+    "降级": "Host 不支持 MCP Apps 时仅返回结构化文本/JSON；工具不能要求 iframe 才能完成工作流。",
+    "限制": "MCP Apps 是 Host 内嵌网页，不等于任意浏览器可直接连接本机 stdio MCP。"
+  },
+  "session_and_streaming": {
+    "当前MCP工具": "scan、search、plan、export 应尽量是短请求和显式参数，不需要模型会话。",
+    "协议状态": "MCP 2026-07-28 的协议核心无状态，但业务仍可通过显式 mapId/taskId 维护状态；AI 对话状态属于 Host。",
+    "进度": "短扫描可用请求相关 progress 通知；长任务仅在 Host/Server 均支持 Tasks 扩展时返回 task handle。",
+    "取消": "stdio 使用协议取消；新 Streamable HTTP 以关闭该请求的 SSE 响应流作为取消信号。",
+    "审批": "只读 MCP tools 不应申请执行权限；人工确认/排除仍作为显式工具参数或 UI 操作。"
+  },
+  "context_and_output_limits": {
+    "问题": "当前本机可有 1,400+ 逻辑路径；一次返回完整 inventory 会占满模型上下文，也可能暴露过多本机路径。",
+    "工具设计": [
+      "atlas_status：版本、根摘要和统计",
+      "search_skills：query/provider/scope/cursor/limit，默认仅返回名称、描述、来源标签和内容哈希",
+      "get_skill：按稳定 ID 获取单项公开元数据，正文默认不返回",
+      "build_map：目标、人工 overrides、明确 custom roots，返回摘要与分页阶段",
+      "export_map：返回 Markdown resource 或受限文本"
+    ],
+    "边界": "继续复用 publicInventory；除非用户显式选择，不把 searchText、完整 SKILL.md 正文或全部绝对路径发送给云端模型。"
+  },
+  "zero_key_definition": "MCP 优先方案中，SkillsMap 不持有模型凭据；AI Host 使用用户已经登录的本机客户端或其自身订阅。它表示项目无需配置 LLM API key，不表示免登录、免费、离线或不向供应商云发送所选上下文。",
+  "provider_matrix": [
+    {
+      "对象": "任何支持本地 stdio MCP 的 AI Host",
+      "本项角色": "调用 SkillsMap MCP Server",
+      "项目API_Key": "不需要",
+      "模型与会话": "由 Host 自己负责",
+      "UI": "支持 MCP Apps 时内嵌，否则文本/结构化结果"
+    }
+  ],
+  "local_runtime_probe": {
+    "Node": "项目声明 Node.js >=20；当前实现无需 npm 第三方依赖。",
+    "MCP实现": "尚不存在，需新增官方 SDK 依赖或独立可选子包。",
+    "Host配置": "Codex、Claude Code、Gemini CLI 官方均支持本地 stdio MCP；实际连接应在实现后用各自当前版本验证。"
+  },
+  "licensing_and_terms": "SkillsMap 作为工具 MCP Server 时不转售或代理任何模型凭据，许可风险最低；Host 的订阅、额度、数据政策和使用条款仍由用户与对应供应商关系决定。",
+  "offline_option": "MCP Server 本身完全本地；是否离线取决于 Host。若 Host 使用本地模型则可离线，否则请求仍可能出站。",
+  "trust_boundary_change": "纯只读 MCP tools 基本保持现有边界，但 Host 会把工具结果放入模型上下文；若新增写操作、Sampling 或 Agent CLI 执行，边界会显著扩大，必须独立显式启用。",
+  "browser_localhost_security": "stdio MCP 没有浏览器网络面。若启用本地 Streamable HTTP，规范要求验证 Origin、仅监听 127.0.0.1 并实施认证；现有 REST API 因只读尚未做这些校验，不能原样承载有副作用工具。",
+  "process_security": "MCP stdio 入口应是固定 node 脚本和固定参数；stdout 只写协议，stderr 写日志；限制 custom roots、每页条数、请求体、并发、运行时和输出大小。",
+  "privacy_and_prompt_injection": "Skill 正文是非信任输入，可能含提示注入。默认 MCP 结果仅给公开元数据和短证据，不把正文当指令；所有来源路径和正文访问需最小化并清楚标记。",
+  "observability_and_testing": [
+    "协议契约：initialize/server-discover 兼容层、tools/list、tools/call、错误码、取消、stdout 纯净",
+    "工具契约：分页稳定、输入 schema、custom roots 拒绝、缓存一致性、Markdown 导出",
+    "隐私回归：PRIVATE_BODY_SENTINEL 不进入默认 MCP 响应或 UI resource data",
+    "Host 矩阵：ChatGPT/Codex、Claude Code、Gemini CLI 的当前 stdio 连接和 MCP Apps 降级",
+    "版本锁定：记录 SDK、协议 revision 和 Host 版本；对 2025-era 与 2026-07-28 消息做 fixture 测试"
+  ],
+  "options_comparison": [
+    {
+      "方案": "SkillsMap stdio MCP Server",
+      "复杂度": "低到中",
+      "成熟度": "高（核心 MCP），但需处理 2026 revision 兼容",
+      "优点": "最贴合当前无模型、只读核心；不需要项目 API key；多个 AI Host 可复用",
+      "缺点": "需要安装配置；Host UI 和协议版本支持不同",
+      "推荐度": "第一优先"
+    },
+    {
+      "方案": "MCP Server + MCP Apps",
+      "复杂度": "中",
+      "成熟度": "官方扩展，Host 支持不齐",
+      "优点": "同时满足 MCP 与网页交互，保留对话上下文",
+      "缺点": "现有前端需 transport 解耦和单页打包；不是独立浏览器",
+      "推荐度": "第二步渐进增强"
+    },
+    {
+      "方案": "Streamable HTTP MCP",
+      "复杂度": "中到高",
+      "成熟度": "核心传输，但 2026-07-28 有破坏性变化",
+      "优点": "常驻、多客户端、可复用现有 Node 服务",
+      "缺点": "增加本地网络和认证攻击面",
+      "推荐度": "没有多客户端需求时暂缓"
+    },
+    {
+      "方案": "MCP Sampling 获取 Host LLM",
+      "复杂度": "高",
+      "成熟度": "已弃用",
+      "优点": "理论上让 Server 借用 Host 模型",
+      "缺点": "采用率低、权限复杂、未来会移除",
+      "推荐度": "不采用"
+    }
+  ],
+  "recommended_architecture": "先新增一个只读 stdio MCP Server，直接复用 scanner/matcher/exporter，并保留现有独立网页；再为少数高价值工具添加 MCP Apps UI。由用户现有 AI Host 负责模型和登录，SkillsMap 不实现 LLM。只有在必须从现有独立网页发起 Agent 会话时，才进入第二项研究的本机 CLI Gateway。",
+  "repository_change_points": [
+    {
+      "文件": "prototype/lib/catalog-service.mjs（新增，可选）",
+      "职责": "从 server.mjs 抽出 roots 合并、inventory cache、scan/search/plan/export 公共服务，供 REST 与 MCP 共用"
+    },
+    {
+      "文件": "prototype/mcp-server.mjs（新增）",
+      "职责": "官方 SDK、stdio transport、只读 tools/resources、分页与错误映射"
+    },
+    {
+      "文件": "prototype/package.json",
+      "职责": "增加 mcp/inspect/test:mcp 脚本和锁定 SDK；若坚持零依赖，把 MCP 作为独立可选子包"
+    },
+    {
+      "文件": "prototype/public/transport-rest.js 与 transport-mcp-app.js（后续新增）",
+      "职责": "让现有视图逻辑不直接绑定 fetch，支持独立 Web 与 MCP Apps bridge"
+    },
+    {
+      "文件": "prototype/test/mcp.test.mjs（新增）",
+      "职责": "协议、schema、分页、隐私与 stdout 契约"
+    },
+    {
+      "文件": "prototype/README.md",
+      "职责": "分别说明网页启动、MCP Host 配置、零 Key 的准确含义和支持矩阵"
+    }
+  ],
+  "rollout_plan": [
+    "阶段0：保持 0.2 行为不变，锁定公共服务函数和隐私测试。",
+    "阶段1：只读 stdio MCP，工具先做 status/search/build_map/export；用 Inspector 与至少两个本机 Host 验证。",
+    "阶段2：为 build_map/search 结果增加 MCP Apps UI，同时保留文本结果与现有独立网页。",
+    "阶段3：只有出现共享常驻服务需求时增加 Streamable HTTP 和本地认证。",
+    "阶段4：只有独立网页确实需要自由对话/Agent 执行时，增加受控 CLI Gateway；不把它混入只读 MCP 默认模式。"
+  ],
+  "acceptance_criteria": [
+    "未配置任何 LLM API key 时，已登录 AI Host 能调用 SkillsMap MCP tools。",
+    "MCP 默认响应不包含 searchText、完整 Skill 正文或测试 sentinel。",
+    "1,000+ Skill inventory 必须分页/过滤，单次结果有确定上限。",
+    "不支持 MCP Apps 的 Host 仍可完成相同工具工作流。",
+    "MCP stdio stdout 只有合法协议消息；日志和诊断走 stderr。",
+    "现有 npm start、双击启动、scan、plan、14 个测试保持兼容。",
+    "若实现 HTTP MCP，跨 Origin 请求被拒、只允许回环、具备认证与取消测试。"
+  ],
+  "recommendation": "GO：将 SkillsMap 作为只读 stdio MCP Server 是最匹配、风险最低、最能兑现‘无需项目 API key’的第一步；MCP Apps 是网页显示的优先增强。不要依赖已弃用 Sampling，也不要在首版把 MCP Server、MCP Host 与本地 Agent Gateway 混成同一个不可审计进程。",
+  "confidence": "高。当前实现由本地代码直接证明；MCP 角色和安全规则有官方规范支持。主要不确定性是各 Host 对 2026-07-28 与 MCP Apps/Tasks 的实际版本支持。",
+  "sources": [
+    "https://modelcontextprotocol.io/specification/2026-07-28/architecture",
+    "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http",
+    "https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/",
+    "https://modelcontextprotocol.io/seps/2577-deprecate-roots-sampling-and-logging",
+    "https://modelcontextprotocol.io/extensions/apps/overview",
+    "https://modelcontextprotocol.io/extensions/tasks/overview",
+    "https://apps.extensions.modelcontextprotocol.io/",
+    "https://ts.sdk.modelcontextprotocol.io/",
+    "https://learn.chatgpt.com/docs/extend/mcp?surface=cli",
+    "https://developers.openai.com/plugins/build/chatgpt-ui",
+    "https://code.claude.com/docs/en/mcp",
+    "https://geminicli.com/docs/tools/mcp-server/"
+  ],
+  "evidence_strength": "强：仓库结论来自逐行代码审计与现有测试；协议结论来自 MCP 当前规范、Final SEP 和官方 Host 文档。",
+  "uncertain": [
+    "provider_matrix：各 Host 对 MCP 2026-07-28、MCP Apps 与 Tasks 的确切版本支持需实测",
+    "protocol_options：官方 TypeScript SDK 在本项目实现时的稳定版本与向后兼容 API 需锁定后验证",
+    "ui_strategy：现有多文件静态前端迁移成 MCP App 单资源的工作量需做小型 spike"
+  ]
+}

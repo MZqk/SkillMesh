@@ -1,0 +1,128 @@
+topic: "本地 Agent Skill 盘点、工作流地图与能力缺口分析市场调研"
+topic_slug: agent-skill-workflow-map-research
+current_date: 2026-08-03
+time_range:
+  primary: "2025-01-01 至 2026-08-03"
+  historical: "仅在解释标准或产品演进时引用更早资料"
+research_question: >-
+  是否值得为拥有大量本地 Skill 的 Agent 重度个人用户，开发一款开源、
+  本地优先、只读的工具，将模糊目标拆解为专家工作流，匹配跨 Agent 的
+  本机能力，并可解释地标出覆盖和缺口？
+decision_gates:
+  - id: problem_exists
+    question: "公开证据是否表明 Skill 分散、遗忘、重复、难选择或难复用是重复出现的问题？"
+  - id: market_gap
+    question: "现有方案是否尚未完成本机跨 Agent 盘点、目标拆解、工作流映射与缺口分析的闭环？"
+  - id: technical_wedge
+    question: "是否至少有三个 Agent 生态可通过只读方式归一到统一 Capability 模型？"
+items:
+  - id: agent_skills_standard
+    name: "Agent Skills 标准与 SKILL.md 数据模型"
+    category: standard
+    seed_entities:
+      - agentskills.io
+      - agentskills/agentskills
+    reason: "确认可移植格式、必需元数据、渐进加载与兼容边界。"
+  - id: codex_ecosystem
+    name: "OpenAI Codex Skills 生态"
+    category: agent_ecosystem
+    seed_entities:
+      - OpenAI Codex
+      - openai/skills
+    reason: "验证扫描路径、项目与全局作用域、格式兼容性和官方分发方式。"
+  - id: claude_code_ecosystem
+    name: "Claude Code Skills 与 Plugin 生态"
+    category: agent_ecosystem
+    seed_entities:
+      - Claude Code
+      - anthropics/skills
+    reason: "区分 Skill、command、plugin 与 marketplace，并验证本地发现能力。"
+  - id: cursor_ecosystem
+    name: "Cursor 的 Agent Skills、Rules 与扩展生态"
+    category: agent_ecosystem
+    seed_entities:
+      - Cursor
+    reason: "确认其 Skill 兼容程度及与 Rules 的边界。"
+  - id: china_agent_ecosystems
+    name: "中国 Agent 产品的 Skill 生态"
+    category: agent_ecosystem
+    seed_entities:
+      - WorkBuddy
+      - QoderWork
+    reason: "验证中国市场的格式、目录、内置市场和自动匹配能力。"
+  - id: hermes_ecosystem
+    name: "Hermes Agent Skills 生态"
+    category: agent_ecosystem
+    seed_entities:
+      - Hermes Agent
+      - NousResearch/hermes-agent
+    reason: "研究多来源 Skill 搜索、导入、学习和跨生态兼容。"
+  - id: openclaw_ecosystem
+    name: "OpenClaw 与 ClawHub 生态"
+    category: agent_ecosystem
+    seed_entities:
+      - OpenClaw
+      - ClawHub
+    reason: "研究本地、工作区、内置 Skill 的优先级，以及大型市场的治理问题。"
+  - id: skill_package_managers
+    name: "跨 Agent Skill 包管理器与目录"
+    category: direct_competitor
+    seed_entities:
+      - skills.sh
+      - npx skills
+      - AgentSkill.sh
+      - SkillsMP
+      - LobeHub
+    reason: "确认安装、更新、搜索、兼容矩阵和锁文件是否已解决资产管理问题。"
+  - id: local_skill_managers
+    name: "本地 Skill 扫描与管理工具"
+    category: direct_competitor
+    seed_entities:
+      - LazySkills
+      - Skills.sh Agent Skills Manager for VS Code
+      - Agent Skill Manager for VS Code
+    reason: "这是与本机盘点、健康检查和多 Agent 扫描最直接重合的产品组。"
+  - id: workflow_orchestration
+    name: "AI 工作流设计与编排平台"
+    category: adjacent_competitor
+    seed_entities:
+      - Dify
+      - Langflow
+      - Flowise
+      - n8n
+    reason: "判断可视化工作流、模板和执行编排是否覆盖目标拆解，但不处理本地 Skill。"
+  - id: capability_catalogs
+    name: "MCP 与软件能力目录"
+    category: adjacent_competitor
+    seed_entities:
+      - Smithery
+      - Glama
+      - Backstage Software Catalog
+    reason: "借鉴能力目录、来源治理、依赖关系和缺口视图，同时区分 Tool 与 Skill。"
+  - id: public_pain_evidence
+    name: "公开用户痛点与行为证据"
+    category: demand_evidence
+    seed_entities:
+      - GitHub Issues and Discussions
+      - Reddit
+      - Hacker News
+      - 官方社区论坛
+    reason: "寻找近期、第一人称、可复核的问题实例和替代行为。"
+  - id: quality_security_research
+    name: "Skill 质量、可复用性与供应链安全研究"
+    category: risk_evidence
+    seed_entities:
+      - "What Keeps Agent Skills from Being Reusable?"
+      - "From Anatomy to Smells: An Empirical Study of SKILL.md"
+      - "Semantic Supply-chain Attacks on AI Agent Skill Registry"
+    reason: "判断静态质量、验证状态、来源和权限是否必须成为 Capability 模型的一部分。"
+execution:
+  batch_size: "首批逐项确认；用户授权后一次完成全部剩余批次"
+  items_per_agent: "剩余对象按 3 个主题包并行分配，主 agent 负责交叉校验与综合"
+  mode: parallel_multi_agent_after_user_approval
+  output_dir: results
+  source_policy:
+    technical_claims: "优先官方文档、官方仓库、规范和论文"
+    market_claims: "优先产品官网、仓库数据和可核验定价页"
+    pain_claims: "保留第一人称公开讨论链接，并与官方资料交叉验证"
+    freshness: "记录发布日期、更新时间或抓取日期"

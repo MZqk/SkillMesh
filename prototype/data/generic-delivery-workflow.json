@@ -1,0 +1,61 @@
+{
+  "id": "generic-capability-delivery",
+  "name": "通用能力交付流程",
+  "version": "1.0.0",
+  "referenceType": "human-curated",
+  "description": "当目标不属于已知平台模板时使用的最小通用流程；应由 Agent 根据结构化需求补充领域能力。",
+  "stages": [
+    {
+      "id": "clarify-outcome",
+      "phase": "定义",
+      "title": "澄清目标、输入与验收边界",
+      "summary": "把方向转成可验证结果、约束与非目标。",
+      "dependencies": [],
+      "deliverables": ["结构化需求", "验收标准", "风险与非目标"],
+      "acceptanceGate": "输入、输出、约束和成功条件均可观察。",
+      "capabilities": [
+        {"id": "requirements", "label": "需求澄清与问题界定", "required": true, "terms": ["requirements", "problem framing", "specification", "需求澄清", "问题定义"]},
+        {"id": "planning", "label": "交付计划与风险分析", "required": true, "terms": ["planning", "risk analysis", "delivery plan", "计划", "风险分析"]}
+      ]
+    },
+    {
+      "id": "design-solution",
+      "phase": "设计",
+      "title": "设计最小可行方案",
+      "summary": "明确关键决策、接口、数据和安全边界。",
+      "dependencies": ["clarify-outcome"],
+      "deliverables": ["方案设计", "接口与数据边界", "验证方案"],
+      "acceptanceGate": "关键决策可解释，高风险假设有验证方式。",
+      "capabilities": [
+        {"id": "solution-design", "label": "领域方案设计", "required": true, "terms": ["solution design", "architecture", "system design", "方案设计", "架构"]},
+        {"id": "security-quality", "label": "安全与质量设计", "required": true, "terms": ["security", "quality", "privacy", "threat model", "安全", "质量"]}
+      ]
+    },
+    {
+      "id": "build-validate",
+      "phase": "交付",
+      "title": "实现并验证端到端结果",
+      "summary": "完成真实路径并用验收证据证明结果。",
+      "dependencies": ["design-solution"],
+      "deliverables": ["可运行结果", "自动与人工验证记录", "已知限制"],
+      "acceptanceGate": "核心验收标准通过，失败边界和恢复方式已记录。",
+      "capabilities": [
+        {"id": "implementation", "label": "领域实现", "required": true, "terms": ["implementation", "development", "build", "实现", "开发"]},
+        {"id": "validation", "label": "测试与验收", "required": true, "terms": ["testing", "validation", "qa", "acceptance test", "测试", "验收"]}
+      ]
+    },
+    {
+      "id": "operate-improve",
+      "phase": "运行",
+      "title": "发布、观测与改进",
+      "summary": "建立可回退交付、反馈和下一轮决策。",
+      "dependencies": ["build-validate"],
+      "deliverables": ["发布与回退记录", "运行健康证据", "改进决定"],
+      "acceptanceGate": "结果可访问或可交付，异常可发现，下一轮决策有证据。",
+      "capabilities": [
+        {"id": "delivery", "label": "发布与交付", "required": true, "terms": ["deployment", "release", "delivery", "发布", "交付"]},
+        {"id": "observability-learning", "label": "观测、反馈与复盘", "required": true, "terms": ["monitoring", "observability", "feedback", "retrospective", "监控", "反馈", "复盘"]}
+      ]
+    }
+  ]
+}

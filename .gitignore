@@ -1,0 +1,41 @@
+# macOS metadata
+.DS_Store
+.AppleDouble
+
+# Local agent and browser-tool state
+.gstack/
+.playwright-mcp/
+.workbuddy/
+**/.playwright-cli/
+
+# Dependencies and local runtimes
+**/node_modules/
+**/.venv/
+**/__pycache__/
+*.py[cod]
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs, caches, and temporary files
+*.log
+npm-debug.log*
+**/tmp/
+.cache/
+.coverage
+coverage/
+.pytest_cache/
+
+# Build and test output
+dist/
+build/
+prototype/output/*
+!prototype/output/pdf/
+prototype/output/pdf/*
+!prototype/output/pdf/development-playbook-sample.pdf

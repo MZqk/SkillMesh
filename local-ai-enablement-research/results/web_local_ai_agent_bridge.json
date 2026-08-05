@@ -1,0 +1,205 @@
+{
+  "name": "网页调用本机 AI Agent 的零 Key 桥接方案",
+  "category": "integration",
+  "scope": "比较 Codex、Gemini CLI、Claude Code 与可选本地模型作为现有 localhost 网页的本机 Agent 后端；覆盖官方嵌入面、登录态复用、会话、流式、审批、取消、分发条款和本机健康探针。不读取账号身份或凭据，不发起真实模型调用，也不把无需项目配置 API key 等同于离线。",
+  "status_as_of": "截至 2026-08-03，现有网页没有 Agent 桥接。官方可用面包括 Codex SDK、app-server、mcp-server 与 exec JSONL；Gemini CLI ACP 与 headless stream-json；Claude Code headless。MCP Apps 可提供 Host 内嵌网页，但独立浏览器仍需要本机 Node 网关。",
+  "current_entrypoints": [
+    "Finder 双击 prototype/启动能力测绘台.command 后启动 127.0.0.1:4317。",
+    "npm start 或 node cli.mjs serve 启动同一 server.mjs。",
+    "浏览器只通过同源 REST API 调用 scan、plan、export；当前没有 chat、session、stream、approval 或 cancel 入口。"
+  ],
+  "current_data_flow": [
+    "网页向 server.mjs 请求公开 inventory；scanner.mjs 在服务端读取有界 SKILL.md 元数据，publicInventory 默认剥离 searchText。",
+    "matcher.mjs 使用确定性权重和人工维护工作流生成地图，不调用模型。",
+    "若加入独立网页 Agent，应由 Node 网关选择最小上下文，经 stdin/协议发送给已登录 CLI，再把供应商事件归一后以 SSE 或分块响应返回浏览器。"
+  ],
+  "existing_ai_or_mcp": "仓库中不存在 MCP Client/Server、Agent SDK、child_process、模型请求、API key、OAuth、会话或审批逻辑；package.json 无第三方依赖。所谓 plan 目前是确定性匹配，不是 AI 推理。",
+  "repository_evidence": [
+    "prototype/package.json：Node >=20，无 dependencies；只有 start、scan、plan、test 脚本。",
+    "prototype/server.mjs：内置 HTTP 静态服务和 scan/plan/export API，无进程启动或流式 Agent 路由。",
+    "prototype/public/app.js：fetch + localStorage，无 WebSocket/SSE 或 Agent 状态机。",
+    "本机只读探针：/Applications/ChatGPT.app/Contents/Resources/codex 可运行，版本 codex-cli 0.146.0-alpha.9.2；PATH 中 /opt/homebrew/bin/codex 包装器因缺失 native binary 报 ENOENT。",
+    "本机只读探针：claude 2.1.142、gemini 0.46.0 可运行；opencode、ollama、lmstudio 未发现。"
+  ],
+  "role_model": [
+    "SkillsMap 作为 MCP Server：只暴露扫描、搜索、地图和导出；用户已登录的 AI Host 持有模型、账号与对话，这是优先方案。",
+    "SkillsMap 作为独立 Web + Agent Gateway：浏览器只连接同源 Node；Node 作为 MCP/ACP/JSONL Client 管理本机 CLI，Agent CLI 持有模型会话。",
+    "MCP Apps：SkillsMap 提供 ui:// 资源，由兼容 Host 在沙箱 iframe 中显示；这是 Host 内嵌 UI，不是任意浏览器页面。",
+    "本地模型：网关连接 Ollama/LM Studio 等 runtime，推理完全在本机，但需要额外安装和模型质量评测。"
+  ],
+  "protocol_options": [
+    "Codex mcp-server：严格 MCP 路径，可通过 codex 与 codex-reply 工具启动或延续 Codex 会话；适合作为网关的 MCP Client spike。",
+    "Codex app-server：stdio JSONL JSON-RPC，提供 thread/turn、审批、流式事件、认证和历史等更完整集成面；适合深度网页集成，但应锁定版本并做契约测试。",
+    "Codex SDK：官方 Node/Python 嵌入面，适合服务端应用；Node SDK 在服务端启动和控制 Codex，不能直接放进浏览器。",
+    "Codex exec --json：稳定的非交互 JSONL fallback，适合一次性只读任务，不宜冒充完整会话协议。",
+    "Gemini --acp：stdio JSON-RPC Agent Client Protocol，覆盖 session、prompt、cancel、文件系统代理，并可连接客户端提供的 MCP Server；优先于解析人类 CLI 输出。",
+    "Gemini/Claude/Codex headless JSONL：作为兼容 fallback；每个适配器必须独立解析版本化事件。",
+    "纯浏览器不能直接可靠启动 stdio 子进程；必须经过兼容 MCP Host 或本机伴随进程。"
+  ],
+  "ui_strategy": [
+    "优先保留现有独立 Web 作为无 Host 的稳定入口。",
+    "对支持 MCP Apps 的 Host，把核心搜索/地图视图包装成 ui:// 沙箱资源；工具必须在无 UI Host 中仍返回可用结构化文本。",
+    "独立网页需要聊天时增加 Provider 状态、会话、流式增量、审批、取消和错误恢复 UI；浏览器永远不接收 executable、任意 argv 或凭据。",
+    "Host 对 Apps/Tasks 支持可能不同，运行时能力协商失败时降级为普通 MCP tools 或现有 REST 页面。"
+  ],
+  "session_and_streaming": [
+    "Codex app-server/SDK 适合映射 thread、turn、item 与审批通知；mcp-server 通过 codex/codex-reply 维持会话；exec JSONL 主要是单次运行。",
+    "Gemini ACP 提供 session/new、session/prompt、session/cancel 和客户端文件系统代理；headless stream-json 提供逐行事件和退出码。",
+    "Claude headless -p 支持 json/stream-json、会话元数据和恢复参数，但其事件、权限与登录行为必须按已安装版本验证。",
+    "网关统一为 start、delta、tool、approval、error、done，并用 AbortSignal、超时和进程树清理实现取消；不认识的事件安全降级而不是静默执行。",
+    "长任务若走 MCP 可评估 Tasks 扩展；独立 Web 则用服务端 task id + SSE/轮询，断线后只恢复状态而不重复副作用。"
+  ],
+  "context_and_output_limits": [
+    "默认只发送目标、用户明确选中的 Skill 公共元数据和有上限的地图摘要，不发送完整 inventory、searchText 或全部 SKILL.md 正文。",
+    "所有列表分页，prompt、单事件、累计 stdout/stderr、最终回答、工具调用次数和会话时长均设硬上限。",
+    "正文按需、按项读取，并标注为不可信数据；不得拼入系统指令或开发者指令区。",
+    "Provider 上下文能力不同，网关只定义共同最小包络，Provider-specific 扩展用能力位而非猜测版本。"
+  ],
+  "zero_key_definition": [
+    "项目无需配置 API key：SkillsMap 不要求用户粘贴、保存或转发 LLM API key。",
+    "复用本机登录：由 Codex/Claude/Gemini 官方 CLI 或 AI Host 使用其已有登录缓存和订阅/账号权限。",
+    "这不代表无需账号、免费、没有额度、无数据出站或完全离线；云 Agent 仍可能上传所选提示与上下文。",
+    "真正离线只由本地模型后端提供，并需要另行安装、存储、硬件与质量基准。"
+  ],
+  "provider_matrix": [
+    {
+      "provider": "Codex",
+      "official_surface": "SDK、app-server、mcp-server、exec --json",
+      "zero_project_key": "可复用 ChatGPT 登录/订阅；认证由 Codex 管理",
+      "fit": "首选：官方嵌入面最完整，严格 MCP 与深度集成两条路径兼具",
+      "caveat": "本机 PATH 包装器损坏但 ChatGPT.app 内置二进制正常；必须做真实健康探针和版本锁定"
+    },
+    {
+      "provider": "Gemini CLI",
+      "official_surface": "ACP、headless stream-json、MCP Client",
+      "zero_project_key": "可复用缓存 Google 登录；无缓存时官方 headless 文档可能要求 API key/Vertex 配置",
+      "fit": "第二 Provider；ACP 比手工解析终端文本更适合 Agent 网关",
+      "caveat": "组织账号、Cloud project、ACP 版本和权限需实机验证"
+    },
+    {
+      "provider": "Claude Code",
+      "official_surface": "headless -p stream-json；MCP Client/工具服务器",
+      "zero_project_key": "个人本机可复用现有订阅登录，但 --bare 会跳过 OAuth/keychain 并要求 API key",
+      "fit": "仅个人自用或受控内部实验的 fallback",
+      "caveat": "不得把 Free/Pro/Max OAuth 代用户路由包装成可分发第三方产品；claude mcp serve 不能直接等同于带 Claude 推理的 Agent Server"
+    },
+    {
+      "provider": "Ollama/LM Studio",
+      "official_surface": "本地模型 runtime/API",
+      "zero_project_key": "是，且可完全离线",
+      "fit": "只有离线需求明确后再做",
+      "caveat": "当前机器未安装；模型下载、RAM/VRAM、中文质量与工具调用可靠性需基准"
+    }
+  ],
+  "local_runtime_probe": [
+    "候选 1：显式配置的绝对路径，仅允许后台生成或管理员配置，不接受浏览器任意路径。",
+    "候选 2：PATH；但必须实际运行 --version/协议探针，不能只用 command -v。",
+    "候选 3：macOS 应用内置 binary，例如 /Applications/ChatGPT.app/Contents/Resources/codex。",
+    "候选 4：SDK 自带 runtime 或官方定位逻辑。",
+    "每个候选记录 path、version、capabilities、可执行错误和认证是否需要用户操作；不读取、不打印账号、token 或 keychain 内容。",
+    "当前结果：Homebrew/npm codex 0.129.0 包装器 ENOENT；ChatGPT.app Codex 0.146.0-alpha.9.2 可运行；Claude 2.1.142 与 Gemini 0.46.0 可运行；Ollama/LM Studio 未发现。"
+  ],
+  "licensing_and_terms": [
+    "Codex 官方认证文档支持 Sign in with ChatGPT，SDK/app-server 用于自有或内部应用；实际分发仍应按官方条款和版本复核。",
+    "Gemini CLI 可通过 Google 登录并复用缓存认证；企业组织策略和 Cloud project 要求可能改变可用性。",
+    "Anthropic 官方法律与合规说明明确：为他人构建产品、应用或服务应使用 Console API key 或受支持云提供商，第三方不得代用户提供 Claude.ai 登录或路由 Free/Pro/Max 凭据。",
+    "因此无 Key 方案应定位为本机用户自带已登录工具，不托管凭据、不代理共享账号、不承诺供应商订阅的产品化许可。"
+  ],
+  "offline_option": "若必须完全离线，增加独立 local-model Provider，并要求显式安装 Ollama/LM Studio、模型许可审核、磁盘/RAM/VRAM 检查、中文任务与工具调用基准；它不应阻塞 MCP 首版。",
+  "trust_boundary_change": [
+    "当前服务只读扫描和确定性计算；加入 Agent 后将获得启动进程、访问工作区、可能执行工具和网络出站的能力。",
+    "Node 网关成为本机高信任组件，浏览器页面和被扫描的 Skill 正文均必须视为不可信输入。",
+    "Provider 登录态应由官方 CLI 持有，SkillsMap 只管理进程和协议，不复制认证材料。"
+  ],
+  "browser_localhost_security": [
+    "Agent 功能默认关闭；启用后服务只能监听 127.0.0.1/::1，不能把 loopback 当作充分鉴权。",
+    "对 Agent API 精确校验 Host、Origin、Sec-Fetch-Site、application/json 和每次启动随机 nonce；不启用 * CORS。",
+    "拒绝 DNS rebinding、跨站表单/脚本和本地网络访问绕过；对静态页设置 CSP，并让事件流保持 same-origin。",
+    "若以后加入 Streamable HTTP MCP，遵循 MCP 官方 Origin 校验、回环绑定与适当认证要求。"
+  ],
+  "process_security": [
+    "固定 provider allowlist 和服务端生成的 executable/argv；使用 spawn(executable, args, {shell:false})，prompt 经 stdin，不调用 exec 拼接命令。",
+    "cwd 固定到经过解析的项目根，环境变量按 allowlist 构建，清除可能改变 CLI 行为的注入变量；不把浏览器值写入命令行。",
+    "默认只读/plan sandbox 和最低权限；任何写入或外部命令都要求协议可表达且 UI 明确审批，永不传递跳过审批/沙箱开关。",
+    "限制并发、排队、超时、stdout/stderr、文件访问和进程数；取消时先协作式取消，再 SIGTERM，超时后终止进程树。"
+  ],
+  "privacy_and_prompt_injection": [
+    "不向云 Agent 发送凭据、环境变量、完整路径清单、searchText 或未选择 Skill 的正文。",
+    "Skill 文档和 Agent 输出都标记为不可信数据；其中的‘忽略规则’、命令或外链不得改变系统权限。",
+    "工具调用必须重新通过服务端参数 schema、路径边界和审批检查，不能因为来自模型就可信。",
+    "日志只记录 provider、版本、事件类型、时长、字节数、退出码和匿名错误；默认不记录完整 prompt/正文/响应。"
+  ],
+  "observability_and_testing": [
+    "新增 /api/agent/health 只返回 provider 路径来源、版本、能力和可用状态，不返回身份或 token。",
+    "每个 Provider 用录制的 JSON-RPC/JSONL fixture 测 start、delta、tool、approval、error、done、未知事件和 schema 变化。",
+    "使用假 CLI 测试登录过期、非零退出、挂起、超大输出、stderr、取消和孙进程清理，日常测试不调用付费模型。",
+    "浏览器测试覆盖错误 Origin/Host/nonce、Agent 默认关闭、并发上限、刷新后任务状态、审批拒绝和隐私 sentinel 不出站。"
+  ],
+  "options_comparison": [
+    "只读 SkillsMap MCP Server：复杂度最低、最贴合当前项目、模型和会话由 Host 负责；网页仅为 Host UI 或独立降级，优先级最高。",
+    "MCP Apps：同时满足 MCP 与网页显示，但依赖 Host 支持，且 UI 在 Host 沙箱内，不是通用独立 Web。",
+    "Codex SDK/app-server：独立网页 AI 体验最完整，能复用登录；增加本机高信任网关和版本兼容成本。",
+    "codex mcp-server：满足严格 MCP 偏好，协议边界清晰；网页网关仍需做 MCP Client、事件和审批映射。",
+    "Gemini ACP：官方 Agent 协议成熟方向清晰，适合第二 Provider；仍需版本、组织认证与 Host 矩阵实测。",
+    "headless JSONL：实现快、跨供应商，但事件和会话语义不统一，作为 fallback 而非唯一抽象。",
+    "本地模型：唯一真正离线方案，但安装和质量成本最高。"
+  ],
+  "recommended_architecture": "采用同一 catalog core、两种交付、三层渐进：P0 抽出公共服务并实现 SkillsMap stdio MCP Server，让已登录 Host 负责模型；P1 可选 MCP Apps 嵌入搜索/地图 UI；P2 只有独立网页确需自由对话时才加入默认关闭的本机 Agent Gateway。P2 首选 Codex SDK/app-server，保留 codex mcp-server 的严格 MCP spike，Gemini ACP 为第二 Provider，headless JSONL 为兼容 fallback。",
+  "repository_change_points": [
+    "prototype/lib/catalog-service.mjs：抽出 server 与 MCP 共用的 scan/search/plan/export。",
+    "prototype/mcp-server.mjs：官方 MCP SDK + stdio，只读 tools/resources。",
+    "prototype/public/transport-rest.js 与 transport-mcp-app.js：保持 UI 逻辑与传输解耦。",
+    "prototype/lib/agents/capabilities.mjs、codex.mjs、gemini.mjs、claude.mjs、events.mjs：健康探针、Provider 适配和统一事件。",
+    "prototype/server.mjs：在显式开关后增加 agent health/session/events/cancel，并加入同源 nonce 安全层。",
+    "prototype/public/app.js/index.html：Provider 状态、增量文本、审批和取消。",
+    "prototype/test/mcp.test.mjs 与 local-agent.test.mjs：协议 fixture、假 CLI、安全和隐私回归。"
+  ],
+  "rollout_plan": [
+    "阶段 0：保持现有行为地抽出 catalog-service，14 个现有测试全部通过。",
+    "阶段 1：只读 stdio MCP vertical slice，提供 status/search/build_map/export；至少两个目标 Host 实测。",
+    "阶段 2：做一个 MCP Apps 搜索/地图视图 spike；不支持 Apps 时验证结构化文本降级。",
+    "阶段 3：在安全地基完成后，以 CAPABILITY_ATLAS_ENABLE_LOCAL_AGENT=1 启用单一 Codex Provider；默认只读并支持取消。",
+    "阶段 4：加入 Gemini ACP 与版本化 fixture；再评估 JSONL fallback。",
+    "阶段 5：Claude 仅个人/受控实验；本地模型仅在离线需求和基准成立后加入。",
+    "任一阶段均可通过关闭 Agent 开关或不配置 MCP Host 回退到现有网页。"
+  ],
+  "acceptance_criteria": [
+    "项目没有 LLM API key 配置项，也不读取或保存供应商 token；已登录 Host/CLI 能完成目标流程。",
+    "MCP Host 可调用只读工具；不支持 Apps 的 Host 仍能完成相同功能。",
+    "独立 Web Agent 默认关闭；非回环监听、错误 Host/Origin、无 nonce、任意 executable/argv 均被拒绝。",
+    "Provider 探针能识别 PATH 中存在但实际损坏的 codex，并安全回退到已验证候选。",
+    "取消、超时、登录过期、未知事件、超大输出和进程树清理由假 CLI 自动测试覆盖。",
+    "默认 Agent payload 不包含 searchText、完整 SKILL.md、未选择路径或隐私 sentinel。",
+    "原有 Finder 双击、npm start、scan、plan、export 与 14 项测试保持兼容。"
+  ],
+  "recommendation": "优先实现 SkillsMap 只读 stdio MCP Server；这是当前仓库最小、最稳、真正复用本机 AI Host 登录态的路径。需要网页展示时优先 MCP Apps，并保留现有 standalone Web。只有 standalone Web 必须主动调用 AI 时，才加入本机 Node Agent Gateway，先支持一个 Codex Provider，再扩展 Gemini ACP；不要首发任意 CLI、多 Provider、写权限或订阅 OAuth 代理。",
+  "confidence": "架构判断高：仓库证据、MCP/Codex/Gemini/Claude 官方接口与本机版本探针相互印证。中等不确定性集中在目标 Host 对 MCP 2026-07-28、Apps/Tasks 的实际支持、各 CLI 锁定版本的事件 schema、企业认证策略及未来供应商条款。",
+  "sources": [
+    "https://modelcontextprotocol.io/specification/2026-07-28/architecture",
+    "https://modelcontextprotocol.io/extensions/apps/overview",
+    "https://modelcontextprotocol.io/extensions/tasks/overview",
+    "https://learn.chatgpt.com/docs/extend/mcp?surface=cli",
+    "https://learn.chatgpt.com/docs/auth",
+    "https://learn.chatgpt.com/docs/codex-sdk",
+    "https://learn.chatgpt.com/docs/app-server",
+    "https://learn.chatgpt.com/docs/developer-commands?surface=cli",
+    "https://learn.chatgpt.com/docs/mcp-server",
+    "https://geminicli.com/docs/cli/acp-mode/",
+    "https://geminicli.com/docs/cli/headless/",
+    "https://geminicli.com/docs/get-started/authentication/",
+    "https://geminicli.com/docs/tools/mcp-server/",
+    "https://code.claude.com/docs/en/authentication",
+    "https://code.claude.com/docs/en/headless",
+    "https://code.claude.com/docs/en/mcp",
+    "https://code.claude.com/docs/en/legal-and-compliance",
+    "https://nodejs.org/api/child_process.html"
+  ],
+  "evidence_strength": "强：当前仓库边界与本机 CLI 路径/版本来自只读代码审计和实际 --version/健康探针；MCP、Codex、Gemini、Claude 与 Node 子进程结论来自官方规范或官方文档。中：未读取真实登录状态、未发起模型调用，Host 支持矩阵和锁定版本事件需在实施 spike 中验证。",
+  "uncertain": [
+    "目标 MCP Host 对 2026-07-28、MCP Apps 与 Tasks 的实际支持范围",
+    "已安装 Codex/Claude/Gemini 是否完成可用账号登录及当前额度",
+    "各 Provider 锁定版本下的完整事件 schema 与审批行为",
+    "企业 Google/ChatGPT/Claude 账号策略与未来订阅条款",
+    "本地模型的中文质量、工具调用可靠性和硬件占用"
+  ]
+}
