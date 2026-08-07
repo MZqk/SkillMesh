@@ -431,26 +431,48 @@ export class WorkflowStore {
 
   async addExternalCandidate(id, { expectedRevision, candidate }, actor = { type: "agent", name: "unknown-agent", channel: "mcp" }) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new Error("external-candidate-required");
-    if (!String(candidate.packageId || candidate.package || "").trim() && !String(candidate.sourceUrl || "").trim()) {
-      throw new Error("external-candidate-source-required");
+    return this.addExternalCandidates(id, { expectedRevision, candidates: [candidate] }, actor);
+  }
+
+  async addExternalCandidates(id, { expectedRevision, candidates }, actor = { type: "agent", name: "unknown-agent", channel: "mcp" }) {
+    if (!Array.isArray(candidates) || !candidates.length || candidates.length > 100) {
+      throw new Error("external-candidates-required");
+    }
+    for (const candidate of candidates) {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+        throw new Error("external-candidate-required");
+      }
+      if (!String(candidate.packageId || candidate.package || "").trim() && !String(candidate.sourceUrl || "").trim()) {
+        throw new Error("external-candidate-source-required");
+      }
     }
     const current = await this.getWorkflow(id);
-    if (candidate.stageId && !current.stages.some((stage) => stage.id === candidate.stageId)) {
-      throw new Error("workflow-stage-not-found");
-    }
-    if (candidate.capabilityId && !current.stages.some((stage) =>
-      stage.capabilities.some((capability) => capability.id === candidate.capabilityId))) {
-      throw new Error("workflow-capability-not-found");
+    for (const candidate of candidates) {
+      const stage = candidate.stageId
+        ? current.stages.find((item) => item.id === candidate.stageId)
+        : null;
+      if (candidate.stageId && !stage) throw new Error("workflow-stage-not-found");
+      if (candidate.capabilityId) {
+        const capabilityExists = stage
+          ? stage.capabilities.some((capability) => capability.id === candidate.capabilityId)
+          : current.stages.some((item) => item.capabilities
+            .some((capability) => capability.id === candidate.capabilityId));
+        if (!capabilityExists) throw new Error("workflow-capability-not-found");
+      }
     }
     const now = new Date().toISOString();
-    const externalCandidates = [...(current.externalCandidates || []), {
-      ...candidate,
-      id: crypto.randomUUID(),
-      actor: normalizeActor(actor),
-      status: candidate.status || "suggested",
-      createdAt: now,
-      updatedAt: now,
-    }];
+    const normalizedActor = normalizeActor(actor);
+    const externalCandidates = [
+      ...(current.externalCandidates || []),
+      ...candidates.map((candidate) => ({
+        ...candidate,
+        id: crypto.randomUUID(),
+        actor: normalizedActor,
+        status: candidate.status || "suggested",
+        createdAt: now,
+        updatedAt: now,
+      })),
+    ];
     return this.updateWorkflow(id, { expectedRevision, patch: { externalCandidates } }, actor);
   }
 

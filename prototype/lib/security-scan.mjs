@@ -4,6 +4,7 @@ import path from "node:path";
 const MAX_FILES = 250;
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
 const MAX_FILE_BYTES = 512 * 1024;
+const SEVERITY_RANK = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 
 const RULES = [
   {
@@ -43,6 +44,50 @@ const RULES = [
     message: "包含动态代码执行。",
   },
 ];
+
+function findingLocation(contents, index) {
+  const line = contents.slice(0, index).split("\n").length;
+  const start = contents.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+  const end = contents.indexOf("\n", index);
+  const excerpt = contents.slice(start, end === -1 ? contents.length : end).trim().slice(0, 240);
+  return { line, excerpt };
+}
+
+function summarizeFindings(findings) {
+  const severity = findings.reduce(
+    (highest, finding) => SEVERITY_RANK[finding.severity] > SEVERITY_RANK[highest] ? finding.severity : highest,
+    "none",
+  );
+  return {
+    status: ["high", "critical"].includes(severity) ? "blocked" : findings.length ? "warning" : "passed",
+    severity,
+  };
+}
+
+export function scanSkillText(contents, { file = "SKILL.md" } = {}) {
+  const source = String(contents || "");
+  const findings = [];
+  for (const rule of RULES) {
+    rule.pattern.lastIndex = 0;
+    const match = rule.pattern.exec(source);
+    if (!match) continue;
+    findings.push({
+      id: rule.id,
+      severity: rule.severity,
+      message: rule.message,
+      file,
+      ...findingLocation(source, match.index),
+    });
+  }
+  return {
+    ...summarizeFindings(findings),
+    findings,
+    bytesScanned: Buffer.byteLength(source),
+    linesScanned: source ? source.split(/\r?\n/).length : 0,
+    truncated: false,
+    scannedAt: new Date().toISOString(),
+  };
+}
 
 async function filesBelow(rootPath) {
   const result = [];
@@ -90,23 +135,13 @@ export async function scanInstalledSkill(rootPath) {
     } finally {
       await handle.close();
     }
-    for (const rule of RULES) {
-      if (!rule.pattern.test(contents)) continue;
-      findings.push({
-        id: rule.id,
-        severity: rule.severity,
-        message: rule.message,
-        file: path.relative(rootPath, filePath) || path.basename(filePath),
-      });
-    }
+    findings.push(...scanSkillText(contents, {
+      file: path.relative(rootPath, filePath) || path.basename(filePath),
+    }).findings);
   }
-  const rank = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
-  const severity = findings.reduce(
-    (highest, finding) => rank[finding.severity] > rank[highest] ? finding.severity : highest,
-    "none",
-  );
+  const { severity, status } = summarizeFindings(findings);
   return {
-    status: ["high", "critical"].includes(severity) ? "blocked" : findings.length ? "warning" : "passed",
+    status,
     severity,
     findings,
     filesScanned: files.length,

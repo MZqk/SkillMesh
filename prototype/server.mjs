@@ -4,9 +4,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { CatalogService } from "./lib/catalog-service.mjs";
+import { EcosystemCatalogService } from "./lib/ecosystem-catalog.mjs";
 import { planToMarkdown } from "./lib/exporter.mjs";
 import { InstallationManager } from "./lib/installation-manager.mjs";
 import { buildPlan } from "./lib/matcher.mjs";
+import { buildSkillKit, reconcileSkillKit } from "./lib/skill-kit.mjs";
 import {
   WorkflowConflictError,
   WorkflowNotFoundError,
@@ -69,8 +71,50 @@ function webActor() {
   return { type: "human", name: "local-user", channel: "web" };
 }
 
+// 服务端代理到 OpenAI（Codex / 任意聊天模型）。API key 只在服务端读取，绝不下发到浏览器。
+async function runAgentTask({ task, context }) {
+  const apiKey = process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    const error = new Error("agent-api-key-missing");
+    error.status = 400;
+    throw error;
+  }
+  const model = process.env.CODEX_MODEL || "codex-mini-latest";
+  const systemPrompt = [
+    "你是 Capability Atlas 的本地 AI 助手。Capability Atlas 是一个把功能需求映射到本机 Agent Skill 的能力测绘工具。",
+    context
+      ? `以下是当前工作流的上下文（JSON 摘要），用于回答或处理用户任务：\n${context}`
+      : "没有附加工作流上下文。",
+    "用简体中文回答。若任务涉及创建或修改工作流 / Brief / Playbook，只给出结构化建议，不要声称已写入系统——这些动作只能在网页由用户确认。",
+  ].join("\n\n");
+  const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: task },
+      ],
+      temperature: 0.2,
+    }),
+  });
+  if (!upstream.ok) {
+    const detail = await upstream.text().catch(() => "");
+    const error = new Error(`agent-upstream-error:${upstream.status}`);
+    error.status = 502;
+    error.detail = detail;
+    throw error;
+  }
+  const data = await upstream.json();
+  return data?.choices?.[0]?.message?.content ?? "";
+}
+
 function workflowRoute(pathname) {
-  const match = pathname.match(/^\/api\/workflows\/([^/]+)(?:\/(assess|review|validate|confirm|history|export))?$/);
+  const match = pathname.match(/^\/api\/workflows\/([^/]+)(?:\/(assess|review|validate|confirm|history|export|external-candidates))?$/);
   if (!match) return null;
   return { id: decodeURIComponent(match[1]), action: match[2] || null };
 }
@@ -118,6 +162,12 @@ function installationPlanRoute(pathname) {
   };
 }
 
+function skillKitRoute(pathname) {
+  const match = pathname.match(/^\/api\/workflows\/([^/]+)\/skill-kit(?:\/(preview))?$/);
+  if (!match) return null;
+  return { id: decodeURIComponent(match[1]), action: match[2] || null };
+}
+
 function installationItemRoute(pathname) {
   const match = pathname.match(/^\/api\/workflows\/([^/]+)\/install-plans\/([^/]+)\/items\/([^/]+)\/quarantine$/);
   if (!match) return null;
@@ -131,6 +181,19 @@ function installationItemRoute(pathname) {
 function installationJobRoute(pathname) {
   const match = pathname.match(/^\/api\/installations\/jobs\/([^/]+)\/cancel$/);
   return match ? { jobId: decodeURIComponent(match[1]) } : null;
+}
+
+function ecosystemGroupRoute(pathname) {
+  const match = pathname.match(/^\/api\/ecosystem\/groups\/([^/]+)$/);
+  return match ? { groupId: decodeURIComponent(match[1]) } : null;
+}
+
+function ecosystemSkillDocumentRoute(pathname) {
+  const match = pathname.match(/^\/api\/ecosystem\/items\/([^/]+)\/skills\/([^/]+)\/document$/);
+  return match ? {
+    itemId: decodeURIComponent(match[1]),
+    skillName: decodeURIComponent(match[2]),
+  } : null;
 }
 
 export function createServer(options = {}) {
@@ -148,6 +211,11 @@ export function createServer(options = {}) {
     dataDirectory: options.dataDirectory || path.dirname(store.filePath),
     runner: options.installationRunner,
     securityScanner: options.securityScanner,
+  });
+  const ecosystemCatalog = options.ecosystemCatalog || new EcosystemCatalogService({
+    fetcher: options.ecosystemFetch,
+    sourceUrl: options.ecosystemSourceUrl,
+    githubToken: options.githubToken ?? process.env.CAPABILITY_ATLAS_GITHUB_TOKEN,
   });
   const server = http.createServer(async (request, response) => {
     try {
@@ -176,6 +244,32 @@ export function createServer(options = {}) {
       }
       if (request.method === "GET" && url.pathname === "/api/scan") {
         sendJson(response, 200, await service.publicInventory({ refresh: url.searchParams.get("refresh") === "1" }));
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/api/ecosystem/catalog") {
+        sendJson(response, 200, await ecosystemCatalog.search({
+          query: url.searchParams.get("query") || "",
+          category: url.searchParams.get("category") || "",
+          source: url.searchParams.get("source") || "",
+          chain: url.searchParams.get("chain") || "",
+          sort: url.searchParams.get("sort") || "relevance",
+          cursor: url.searchParams.get("cursor") || 0,
+          limit: url.searchParams.get("limit") || 100,
+          refresh: url.searchParams.get("refresh") === "1",
+        }));
+        return;
+      }
+      const ecosystemGroupRequest = ecosystemGroupRoute(url.pathname);
+      if (ecosystemGroupRequest && request.method === "GET") {
+        sendJson(response, 200, await ecosystemCatalog.comparisonForGroup(ecosystemGroupRequest.groupId));
+        return;
+      }
+      const ecosystemDocumentRequest = ecosystemSkillDocumentRoute(url.pathname);
+      if (ecosystemDocumentRequest && request.method === "GET") {
+        sendJson(response, 200, await ecosystemCatalog.previewForSkill({
+          ...ecosystemDocumentRequest,
+          refresh: url.searchParams.get("refresh") === "1",
+        }));
         return;
       }
       if (request.method === "POST" && url.pathname === "/api/scan") {
@@ -230,6 +324,33 @@ export function createServer(options = {}) {
         sendJson(response, 201, workflow);
         return;
       }
+      if (request.method === "POST" && url.pathname === "/api/agent/task") {
+        const body = await readJson(request, { maxBytes: 200_000 });
+        if (typeof body.task !== "string" || !body.task.trim()) {
+          sendJson(response, 400, { error: "invalid-request", message: "task-required" });
+          return;
+        }
+        let context;
+        if (body.workflowId) {
+          try {
+            const wf = await store.getWorkflow(body.workflowId, { includeHistory: false });
+            context = JSON.stringify({
+              id: wf.id,
+              name: wf.name,
+              goal: wf.goal,
+              stages: (wf.stages || []).map((stage) => ({
+                title: stage.title,
+                capabilities: (stage.capabilities || []).map((capability) => capability.label),
+              })),
+            });
+          } catch {
+            context = undefined;
+          }
+        }
+        const result = await runAgentTask({ task: body.task, context });
+        sendJson(response, 200, { result });
+        return;
+      }
       const workflowRequest = workflowRoute(url.pathname);
       const workflowVersionRequest = workflowVersionRoute(url.pathname);
       const projectBriefRequest = projectBriefRoute(url.pathname);
@@ -238,8 +359,35 @@ export function createServer(options = {}) {
       const playbookVersionRequest = playbookVersionRoute(url.pathname);
       const playbookProgressRequest = playbookProgressRoute(url.pathname);
       const installPlanRequest = installationPlanRoute(url.pathname);
+      const skillKitRequest = skillKitRoute(url.pathname);
       const installItemRequest = installationItemRoute(url.pathname);
       const installJobRequest = installationJobRoute(url.pathname);
+      if (skillKitRequest && request.method === "GET" && !skillKitRequest.action) {
+        const workflow = await store.getWorkflow(skillKitRequest.id);
+        const requestedPlanId = url.searchParams.get("planId") || "";
+        const plan = requestedPlanId
+          ? (workflow.installationPlans || []).find((item) => item.id === requestedPlanId)
+          : workflow.installationPlans?.at(-1);
+        if (!plan) throw new Error("skill-kit-plan-not-found");
+        const body = `${JSON.stringify(buildSkillKit({ workflow, plan }), null, 2)}\n`;
+        response.writeHead(200, {
+          "content-type": "application/json; charset=utf-8",
+          "content-length": Buffer.byteLength(body),
+          "content-disposition": "attachment; filename=\"capability-atlas.skill-kit.json\"",
+          "cache-control": "no-store",
+        });
+        response.end(body);
+        return;
+      }
+      if (skillKitRequest && request.method === "POST" && skillKitRequest.action === "preview") {
+        const body = await readJson(request, { maxBytes: 600_000 });
+        const [workflow, inventory] = await Promise.all([
+          store.getWorkflow(skillKitRequest.id),
+          service.publicInventory({ refresh: false }),
+        ]);
+        sendJson(response, 200, reconcileSkillKit({ kit: body.kit, inventory, workflow }));
+        return;
+      }
       if (installJobRequest && request.method === "POST") {
         sendJson(response, 202, await installations.cancel(installJobRequest, webActor()));
         return;
@@ -450,6 +598,30 @@ export function createServer(options = {}) {
         sendJson(response, 200, await store.setHumanReview(workflowRequest.id, body, webActor()));
         return;
       }
+      if (workflowRequest && request.method === "POST" && workflowRequest.action === "external-candidates") {
+        const body = await readJson(request);
+        const workflow = await store.getWorkflow(workflowRequest.id);
+        const stage = workflow.stages.find((item) => item.id === body.stageId);
+        if (!stage) throw new Error("workflow-stage-not-found");
+        if (!stage.capabilities.some((capability) => capability.id === body.capabilityId)) {
+          throw new Error("workflow-capability-not-found");
+        }
+        const candidateInput = {
+          itemId: body.catalogItemId,
+          stageId: body.stageId,
+          capabilityId: body.capabilityId,
+          query: body.query,
+          rationale: body.rationale,
+        };
+        const candidates = Array.isArray(body.skillNames)
+          ? await ecosystemCatalog.candidatesForChain({ ...candidateInput, skillNames: body.skillNames })
+          : [await ecosystemCatalog.candidateFor({ ...candidateInput, skillName: body.skillName })];
+        sendJson(response, 201, await store.addExternalCandidates(workflowRequest.id, {
+          expectedRevision: body.expectedRevision,
+          candidates,
+        }, webActor()));
+        return;
+      }
       if (workflowRequest && request.method === "POST" && workflowRequest.action === "validate") {
         const body = await readJson(request);
         await service.getSkill(body.contentHash);
@@ -546,6 +718,9 @@ export function createServer(options = {}) {
         "workflow-stages-required",
         "workflow-patch-required",
         "suggestion-required",
+        "external-candidate-required",
+        "external-candidates-required",
+        "external-candidate-source-required",
         "invalid-review-decision",
         "human-review-required",
         "human-validation-required",
@@ -617,6 +792,22 @@ export function createServer(options = {}) {
         "human-installation-approval-required",
         "repair-action-invalid",
         "external-install-rename-unsupported",
+        "ecosystem-catalog-invalid",
+        "ecosystem-skill-not-recordable",
+        "ecosystem-skill-preview-unavailable",
+        "ecosystem-skill-source-unsupported",
+        "ecosystem-gap-required",
+        "ecosystem-chain-skills-required",
+        "ecosystem-item-not-chain",
+        "skill-kit-object-required",
+        "skill-kit-schema-unsupported",
+        "skill-kit-skills-required",
+        "skill-kit-skill-invalid",
+        "skill-kit-external-package-invalid",
+        "skill-kit-duplicate-skill",
+        "skill-kit-hash-required",
+        "skill-kit-hash-mismatch",
+        "skill-kit-empty",
       ]);
       const isValidationError = error.message.startsWith("workflow-not-confirmable:")
         || error.message.startsWith("project-brief-not-freezable:")
@@ -642,7 +833,9 @@ export function createServer(options = {}) {
         || error.message.startsWith("installation-item-ineligible:")
         || error.message.startsWith("installation-risk-ack-required:")
         || error.message.startsWith("external-target-unsupported:");
-      const status = error.message.startsWith("pdf-renderer-unavailable:")
+      const status = typeof error.status === "number"
+        ? error.status
+        : error.message.startsWith("pdf-renderer-unavailable:")
         ? 503
         : error instanceof WorkflowConflictError
         ? 409
@@ -655,6 +848,10 @@ export function createServer(options = {}) {
           || error.message === "playbook-stage-not-found" || error.message === "playbook-step-not-found"
           || error.message === "installation-plan-not-found" || error.message === "installation-job-not-found"
           || error.message === "installation-item-not-found"
+          || error.message === "skill-kit-plan-not-found"
+          || error.message === "ecosystem-item-not-found"
+          || error.message === "ecosystem-group-not-found"
+          || error.message === "ecosystem-skill-document-not-found"
           ? 404
           : error.message === "request-too-large"
         ? 413
@@ -669,6 +866,7 @@ export function createServer(options = {}) {
     }
   });
   server.installationManager = installations;
+  server.ecosystemCatalog = ecosystemCatalog;
   return server;
 }
 

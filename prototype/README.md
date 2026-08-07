@@ -19,6 +19,12 @@ npm start
 
 网页首页只展示并选择本机服务中已有的工作流，不会根据网页自然语言输入创建流程。若列表为空，让 AI Agent 通过 MCP 创建草案后，网页会自动发现并打开它。“开发手册”面板负责补齐/冻结 Brief、生成手册、审阅差异、确认版本、记录人工执行进度与质量门，以及导出 Markdown/PDF；工作区继续负责工作流确认和安装回执单。所有冻结、确认、进度和安装执行动作都只在网页开放。
 
+“Skill 标本册”现在分为两层：**本机事实**保留内容指纹、副本、来源和冲突证据；**生态候选**由本机服务读取 [Skills Atlas](https://zita-go.github.io/Skills-Atlas/) 的公开 `data.json`，支持搜索、分类、来源、链式组合与排序筛选。同一功能组的多个公开来源可按许可证、更新时间、热度、安装映射和可绑定 Skill 横向对比；这些字段始终分开陈列，不折算成安全或质量总分。组合链详情按目录声明顺序展示覆盖账本：用精确名称标出本机发现项、当前缺口已记录项与待补项，并可将全部待补成员一次原子记录到同一能力缺口；每项保留链名、组名和位置溯源，但不会因此自动接受、创建安装计划或宣称运行依赖。对目录提供精确映射的 GitHub 来源，用户还可显式读取单份 `SKILL.md`：页面显示仓库、分支、路径、SHA-256、frontmatter、工具声明、带行号原文和可跳转的静态风险线索。未命中规则不等于安全，原文不会交给模型，也不会被执行。缺失能力可直接带查询词进入生态层，并把服务端核验过的 `owner/repo@skill` 记录绑定到该缺口；记录候选、接受候选和执行安装仍是独立人工步骤。目录查询可复制为深链接，`⌘/Ctrl + K` 可快速打开标本册。
+
+借鉴 [Skills Atlas CLI 的 project kit](https://github.com/Zita-Go/Skills-Atlas/blob/main/packages/skills-atlas-cli/README.md)，安装回执单可把已保存选择导出为 `capability-atlas.skill-kit.json`。该文件是可提交的项目意图清单：稳定 SHA-256 覆盖工作流引用、目标 Agent、能力覆盖、所选 Skill 及组合链来源，不包含绝对路径、安装命令、确认记录或操作者。导入时仅比较本机清单与当前候选状态，区分内容一致、本地有改动、无指纹但同名、已禁用、已有候选和缺失；不会自动创建候选/计划、安装、移除或清理未声明的本机 Skill。
+
+原文读取只访问与目录仓库一致的 GitHub Contents API，拒绝绝对路径、父目录跳转和重定向，单份上限 256 KB、超时 10 秒，并在本机内存缓存 30 分钟。匿名读取受 GitHub 额度限制；需要更高额度时可设置专用 `CAPABILITY_ATLAS_GITHUB_TOKEN`，该值只由服务端发送给 GitHub，不会下发浏览器。
+
 `npm run setup:pdf` 会在 `prototype/.venv` 创建或复用隔离 Python 环境并安装锁定的 ReportLab，不修改系统 Python；重复运行不会清空已有环境。MCP 连接不会静默安装或联网下载 PDF 依赖；未安装时网页会给出明确命令。可用 `CAPABILITY_ATLAS_PDF_PYTHON` 指定已有 ReportLab 的 Python，用 `CAPABILITY_ATLAS_PDF_FONT` 指定支持中文的 TrueType 字体。
 
 ## 连接 AI Agent
@@ -112,6 +118,8 @@ MCP 还提供 Prompt `map_requirement_to_workflow` 来串起推荐调用顺序�
 5. 用户在网页检查共享路径、Agent 链接、命令预览、同名冲突和逐项风险；保存选择后再次确认执行。高风险覆盖必须逐项勾选，普通项目可批量确认。
 6. 后台事务逐 Skill 执行。成功项保留，失败项独立回滚；高/严重发现立即断链并隔离，中/低发现保留但等待人工审阅。完成后重新扫描并按每个目标 Agent 复评，页面显示“已安装，等待 Agent 重新加载”。
 
+若希望把这次选择随项目保存，在回执单的“项目 Skill Kit”区下载清单。团队成员可在自己的 Capability Atlas 中导入并只读核对；缺失项仍需回到本机标本、生态候选和人工安装流程逐项处理。
+
 ## 数据与版本语义
 
 - 能力项是核心单位，Skill 只是覆盖能力的证据；不使用“文件数量等于能力数量”的模型。
@@ -129,6 +137,7 @@ MCP 还提供 Prompt `map_requirement_to_workflow` 来串起推荐调用顺序�
 - 备份包含共享工作流、确认历史和自定义根，不包含 Skill 正文；恢复采用合并，不删除现有数据。
 - 浏览器 `localStorage` 只保存当前选择、界面偏好和旧版兼容数据，不再是工作流事实源。
 - 安装计划直接保存在工作流中，并绑定 `workflowId + revision + contentHash`；修订变化会拒绝执行旧计划。
+- Skill Kit 是安装计划所选项的稳定、路径无关意图快照；导入核对不改变工作流修订、候选、计划或本机文件。
 - 全局同时只运行一个安装事务，进程间使用文件锁。异常中断不会自动续跑，而是进入待修复状态，由用户选择回滚、隔离或接受当前状态。
 
 ## 信任边界
@@ -142,7 +151,12 @@ MCP 还提供 Prompt `map_requirement_to_workflow` 来串起推荐调用顺序�
 网页 ───────────────> 共享版本化 JSON 持久层 <── Agent 工作流/Brief/Playbook 草案
   ├──冻结 Brief / 模板迁移审阅 / 确认手册 / 人工进度与验证（网页专属）
   ├──同源导出 Markdown / PDF
+  ├──已保存安装选择──> Skill Kit 意图清单 ──导入只读核对──> 本机清单/候选状态
   └──显式执行确认──> 单事务安装器 ──> 共享根/Agent 链接 ──> 扫描/隔离/复评
+
+Skills Atlas data.json ──限时/限量拉取──> EcosystemCatalogService ──规范化/筛选──> 网页生态候选
+                                         ├──精确 GitHub 路径──> 单份原文/指纹/静态线索（只读）
+                                         └──服务端解析包名──> 能力缺口候选
 ```
 
 - 默认网页只监听 `127.0.0.1`；MCP MVP 仅使用本机 `stdio`，没有远程端口。
@@ -151,7 +165,8 @@ MCP 还提供 Prompt `map_requirement_to_workflow` 来串起推荐调用顺序�
 - 扫描单文件最多 512 KB、单根最多 2,000 份；自定义根最多 20 个，并拒绝磁盘根和整个主目录。
 - 静态匹配不能证明运行成功。“人工验证可用”必须绑定具体内容指纹和使用环境。
 - 五维分数是可解释的检索启发式，不是成功概率；宽泛词和仅正文命中会降为弱证据。
-- 外部查询会访问公共 Skills 索引，返回内容不可信；记录或接受候选不会自动安装。只有网页确认过的计划能启动 `npx skills add`，且安装结果仍不等于运行验证。
+- 外部查询和原文审阅会访问公共索引/GitHub，返回内容不可信；原文只以文本展示，不交给模型或执行。记录或接受候选不会自动安装，只有网页确认过的计划能启动 `npx skills add`，且安装结果仍不等于运行验证。
+- 导入的 Skill Kit 是不可信项目数据：必须通过 schema、身份和意图哈希校验，且只参与比较；外部来源不会在导入时被读取或执行。
 - 安装器不使用 shell 拼接或 `sudo`，不接受任意 URL、包或目标路径；网络失败不自动重试，手动重试重新获取当时最新版本。
 - 同名不同内容默认保留。替换必须逐项确认并先做快照；“移除”只处理 Capability Atlas 拥有的链接/来源并移入隔离区，不删除原始本地 Skill。
 - 网页确认代表本机 UI 中的明确确认动作，不是密码学意义上的真人身份认证。
@@ -191,6 +206,7 @@ zsh -n 启动能力测绘台.command
 - 手册执行与质量门均为人工记录；尚未实现命令执行器、沙箱审批、自动证据采集或项目状态双向同步。
 - PDF 依赖本机隔离 ReportLab 环境和可嵌入的中文 TrueType 字体；不会在 MCP 建连时自动安装依赖。
 - 当前安装验证止于静态扫描、Agent 重新发现和工作流复评；不会自动运行 Skill，也不会自动重启 Agent。
+- Skill Kit 当前是可验证意图与差异回执，不是自动同步器或锁文件；无内容指纹的外部项只能确认“同名已存在”，不能证明内容一致。
 - 尚未实现 MCP Apps 内嵌界面、Streamable HTTP、云同步或团队身份系统。
 - 网页通过短轮询同步多进程修改，不是多人实时协同编辑器。
 
@@ -198,6 +214,7 @@ zsh -n 启动能力测绘台.command
 
 - [`mcp-server.mjs`](./mcp-server.mjs)：标准 stdio MCP Server 和工具定义。
 - [`lib/catalog-service.mjs`](./lib/catalog-service.mjs)：网页与 MCP 共用的扫描、搜索、正文边界和评估服务。
+- [`lib/ecosystem-catalog.mjs`](./lib/ecosystem-catalog.mjs)：Skills Atlas 公开元数据代理、精确原文读取/缓存、安装前静态线索和受控候选解析。
 - [`lib/workflow-store.mjs`](./lib/workflow-store.mjs)：原子 JSON 持久化、乐观锁、确认快照和安全合并。
 - [`lib/workflow-model.mjs`](./lib/workflow-model.mjs)：有序阶段、能力项、来源和确认约束。
 - [`lib/project-brief-model.mjs`](./lib/project-brief-model.mjs)：引导式项目输入、完整度和冻结约束。
@@ -210,8 +227,9 @@ zsh -n 启动能力测绘台.command
 - [`lib/playbook-verification-model.mjs`](./lib/playbook-verification-model.mjs)：样例就绪判断、按序验证等级和追加式人工证据记录。
 - [`lib/matcher.mjs`](./lib/matcher.mjs)：能力覆盖与 Skill 就绪度评估。
 - [`lib/skill-search.mjs`](./lib/skill-search.mjs)：有界外部候选查询与解析；无安装行为。
+- [`lib/skill-kit.mjs`](./lib/skill-kit.mjs)：路径无关的项目 Skill 意图清单、稳定哈希校验和只读本机差异核对。
 - [`lib/install-plan.mjs`](./lib/install-plan.mjs)：安装准入、最小能力覆盖和修订绑定。
 - [`lib/installation-manager.mjs`](./lib/installation-manager.mjs)：单事务执行、链接、快照、取消、所有权和隔离策略。
-- [`lib/security-scan.mjs`](./lib/security-scan.mjs)：安装后的有界静态安全扫描。
+- [`lib/security-scan.mjs`](./lib/security-scan.mjs)：安装前单文档与安装后目录共用的有界静态安全扫描。
 - [`public/app.js`](./public/app.js)：共享工作流、Agent 建议、人工确认和安装回执单界面。
 - [`public/playbook-ui.js`](./public/playbook-ui.js)：Brief、差异审阅、手册阅读、进度和导出界面。

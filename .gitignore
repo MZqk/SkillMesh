@@ -7,6 +7,7 @@
 .playwright-mcp/
 .workbuddy/
 **/.playwright-cli/
+**/.aiq/
 
 # Dependencies and local runtimes
 **/node_modules/

@@ -220,17 +220,30 @@
       <div class="dialog-surface">
         <header class="dialog-header">
           <div>
-            <p class="eyebrow">Local inventory fieldbook</p>
+            <p class="eyebrow" id="catalog-eyebrow">Local inventory fieldbook</p>
             <h2 id="catalog-title">Skill 标本册</h2>
-            <p>查看本机每份 Skill 的作用、来源、副本和冲突；正文不会发送到浏览器。</p>
+            <p id="catalog-description">查看本机每份 Skill 的作用、来源、副本和冲突；正文不会发送到浏览器。</p>
           </div>
           <form method="dialog"><button class="dialog-close" aria-label="关闭 Skill 标本册">×</button></form>
         </header>
-        <div class="catalog-toolbar">
+        <div class="catalog-source-switch" role="tablist" aria-label="Skill 目录来源">
+          <button id="catalog-local-tab" type="button" role="tab" aria-selected="true">
+            <span>本机事实</span><small>已扫描、可验证</small>
+          </button>
+          <button id="catalog-ecosystem-tab" type="button" role="tab" aria-selected="false">
+            <span>生态候选</span><small>公开元数据、未安装</small>
+          </button>
+          <p id="catalog-source-note">本机内容按指纹去重；正文不进入浏览器。</p>
+        </div>
+        <div class="catalog-search-strip">
           <label class="search-field">
-            <span>搜索名称、作用或路径</span>
+            <span id="catalog-search-label">搜索名称、作用或路径</span>
             <input id="catalog-search" type="search" placeholder="例如：research、部署、playwright" autocomplete="off" />
           </label>
+          <button class="button button-quiet" id="catalog-share" type="button">复制查询链接</button>
+          <button class="button button-quiet" id="catalog-refresh" type="button" hidden>刷新生态数据</button>
+        </div>
+        <div class="catalog-toolbar" id="catalog-local-toolbar">
           <label>
             <span>生态</span>
             <select id="catalog-provider"><option value="">全部生态</option></select>
@@ -251,6 +264,31 @@
             <select id="catalog-view">
               <option value="canonical">唯一内容</option>
               <option value="paths">全部路径</option>
+            </select>
+          </label>
+        </div>
+        <div class="catalog-toolbar catalog-ecosystem-toolbar" id="catalog-ecosystem-toolbar" hidden>
+          <label>
+            <span>功能大类</span>
+            <select id="catalog-ecosystem-category"><option value="">全部大类</option></select>
+          </label>
+          <label>
+            <span>来源仓库</span>
+            <select id="catalog-ecosystem-source"><option value="">全部来源</option></select>
+          </label>
+          <label>
+            <span>工作流关系</span>
+            <select id="catalog-ecosystem-chain">
+              <option value="">全部组合</option>
+              <option value="chained">只看强绑定链</option>
+            </select>
+          </label>
+          <label>
+            <span>排序</span>
+            <select id="catalog-ecosystem-sort">
+              <option value="relevance">相关度</option>
+              <option value="popular">来源热度</option>
+              <option value="recent">最近更新</option>
             </select>
           </label>
         </div>
@@ -302,6 +340,19 @@
                 <li>外部来源先安装再扫描；高风险会立即断链并移入隔离区。</li>
                 <li>不运行 Skill，不使用 sudo，不自动重试网络失败。</li>
               </ul>
+            </section>
+            <section class="installation-kit-controls">
+              <p class="eyebrow">03 · Reproducible intent</p>
+              <h3>项目 Skill Kit</h3>
+              <p class="installation-help">把已保存的选择导出为不含路径和命令的项目意图清单；导入只核对本机状态，不自动同步或删除。</p>
+              <div class="installation-kit-actions">
+                <button class="button button-quiet button-wide" id="skill-kit-export-button" type="button" disabled>保存选择并下载 Kit</button>
+                <label class="button button-quiet button-wide file-button">
+                  核对已有 Kit
+                  <input id="skill-kit-import-input" type="file" accept="application/json,.json" />
+                </label>
+              </div>
+              <p class="installation-kit-boundary">导入文件不会创建候选、安装计划或文件写入。</p>
             </section>
           </aside>
           <main class="installation-receipt" id="installation-receipt">
