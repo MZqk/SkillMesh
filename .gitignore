@@ -4,6 +4,7 @@
 
 # Local agent and browser-tool state
 .gstack/
+.impeccable/
 .playwright-mcp/
 .workbuddy/
 **/.playwright-cli/

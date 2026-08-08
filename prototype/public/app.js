@@ -129,6 +129,9 @@ const state = {
 };
 
 let playbookUi = null;
+const evidencePanelMedia = window.matchMedia("(max-width: 1179px)");
+const compactHeaderMedia = window.matchMedia("(max-width: 560px)");
+let evidenceReturnFocus = null;
 
 const elements = {
   workflowSelect: document.querySelector("#workflow-select"),
@@ -136,6 +139,7 @@ const elements = {
   workflowSelectionName: document.querySelector("#workflow-selection-name"),
   workflowSelectionMeta: document.querySelector("#workflow-selection-meta"),
   workflowBadge: document.querySelector("#workflow-badge"),
+  workflowState: document.querySelector("#workflow-state"),
   workflowRevision: document.querySelector("#workflow-revision"),
   workflowHistory: document.querySelector("#workflow-history"),
   workflowConfirmationReadiness: document.querySelector("#workflow-confirmation-readiness"),
@@ -155,6 +159,9 @@ const elements = {
   exportMarkdown: document.querySelector("#export-markdown"),
   workspaceButton: document.querySelector("#workspace-button"),
   saveStatus: document.querySelector("#save-status"),
+  headerActions: document.querySelector("#header-actions"),
+  headerMoreButton: document.querySelector("#header-more-button"),
+  headerMoreMenu: document.querySelector("#header-more-menu"),
   metrics: document.querySelector("#inventory-metrics"),
   scanTime: document.querySelector("#scan-time"),
   roots: document.querySelector("#root-list"),
@@ -164,6 +171,8 @@ const elements = {
   assumptionCount: document.querySelector("#assumption-count"),
   stages: document.querySelector("#stage-list"),
   inspector: document.querySelector("#inspector-content"),
+  evidenceDialog: document.querySelector("#evidence-dialog"),
+  evidenceDialogContent: document.querySelector("#evidence-dialog-content"),
   toast: document.querySelector("#toast"),
   catalogButton: document.querySelector("#catalog-button"),
   catalogDialog: document.querySelector("#catalog-dialog"),
@@ -186,6 +195,8 @@ const elements = {
   catalogEcosystemChain: document.querySelector("#catalog-ecosystem-chain"),
   catalogEcosystemSort: document.querySelector("#catalog-ecosystem-sort"),
   catalogSummary: document.querySelector("#catalog-summary"),
+  catalogLayout: document.querySelector("#catalog-layout"),
+  catalogDetailBack: document.querySelector("#catalog-detail-back"),
   catalogList: document.querySelector("#catalog-list"),
   catalogDetail: document.querySelector("#catalog-detail"),
   catalogMore: document.querySelector("#catalog-more"),
@@ -422,7 +433,7 @@ function renderWorkflowPicker() {
     elements.workflowSelect.disabled = true;
     elements.workflowSelectionSource.textContent = "等待 MCP";
     elements.workflowSelectionName.textContent = "尚未选择工作流";
-    elements.workflowSelectionMeta.textContent = "让 AI Agent 通过 MCP 提交草案后，工作流会自动出现在这里。";
+    elements.workflowSelectionMeta.textContent = "Agent 通过 MCP 提交草案后，工作流会自动出现在这里。";
     return;
   }
   for (const workflow of choices) {
@@ -453,6 +464,7 @@ function renderWorkflowPicker() {
 
 function renderWorkflowState() {
   const workflow = state.activeWorkflow;
+  elements.workflowState.classList.toggle("empty", !workflow);
   if (!workflow) {
     elements.workflowBadge.textContent = "未连接";
     elements.workflowBadge.classList.remove("confirmed");
@@ -580,13 +592,21 @@ async function pollWorkflowUpdates() {
   }
 }
 
-function selectStage(stageId, { scroll = false } = {}) {
+function openEvidenceDialog(trigger) {
+  if (!evidencePanelMedia.matches || !elements.evidenceDialog) return;
+  evidenceReturnFocus = trigger || document.activeElement;
+  elements.evidenceDialogContent.scrollTop = 0;
+  if (!elements.evidenceDialog.open) elements.evidenceDialog.showModal();
+}
+
+function selectStage(stageId, { reveal = false, trigger = null } = {}) {
   state.selectedStageId = stageId;
   persistWorkspace({ silent: true });
   renderStages();
   renderInspector();
-  if (scroll && window.innerWidth < 1180) {
-    document.querySelector(".evidence-inspector").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (reveal) {
+    const currentTrigger = elements.stages.querySelector(".stage-card.selected") || trigger;
+    openEvidenceDialog(currentTrigger);
   }
 }
 
@@ -600,7 +620,7 @@ function renderStages() {
       dataset: { status: stage.status },
       attributes: { type: "button", "aria-pressed": String(state.selectedStageId === stage.id) },
     });
-    card.addEventListener("click", () => selectStage(stage.id, { scroll: true }));
+    card.addEventListener("click", () => selectStage(stage.id, { reveal: true, trigger: card }));
     card.append(node("span", { className: "stage-number", text: String(stage.order).padStart(2, "0") }));
     const copy = node("span");
     copy.append(
@@ -638,6 +658,15 @@ function copyText(value, successMessage = "已复制") {
 function resetCatalogScroll({ results = true, detail = true } = {}) {
   if (results) elements.catalogList.closest(".catalog-results").scrollTop = 0;
   if (detail) elements.catalogDetail.scrollTop = 0;
+}
+
+function setCatalogNarrowView(view = "list", { focus = false } = {}) {
+  elements.catalogLayout.dataset.narrowView = view;
+  if (!focus) return;
+  const target = view === "list"
+    ? elements.catalogList.querySelector(".catalog-item.selected") || elements.catalogSearch
+    : elements.catalogDetail;
+  target?.focus?.();
 }
 
 async function setDecision(stageId, candidateId, decision) {
@@ -722,6 +751,7 @@ function openCatalogFor(contentHash) {
   resetCatalogScroll();
   syncCatalogUrl();
   renderCatalog();
+  setCatalogNarrowView("detail");
   elements.catalogDialog.showModal();
 }
 
@@ -735,20 +765,23 @@ function openEcosystemForGap(query) {
   resetCatalogScroll();
   syncCatalogUrl();
   renderCatalog();
+  setCatalogNarrowView("list");
   if (!elements.catalogDialog.open) elements.catalogDialog.showModal();
   elements.catalogSearch.focus();
 }
 
-function candidateCard(stage, candidate) {
+function candidateCard(stage, candidate, { open = false } = {}) {
   const actionLabels = candidateActionLabels(
     candidate.name,
     candidate.decision,
     candidate.provider,
     candidate.scope,
   );
-  const card = node("article", {
+  const card = node("details", {
     className: `candidate-card${candidate.decision === "confirmed" ? " confirmed" : ""}`,
   });
+  card.open = open;
+  const summary = node("summary", { className: "candidate-summary" });
   const heading = node("div", { className: "candidate-heading" });
   const nameBlock = node("div");
   nameBlock.append(
@@ -760,8 +793,14 @@ function candidateCard(stage, candidate) {
     text: `综合 ${Math.round(candidate.score * 100)}%`,
     attributes: { title: "可解释检索综合分，不代表执行成功率" },
   }));
-  card.append(heading, node("p", { className: "candidate-description", text: candidate.description }));
-  card.append(node("p", {
+  summary.append(heading, node("span", {
+    className: "candidate-summary-state",
+    text: candidate.decision === "confirmed" ? "已确认" : candidate.decision === "partial" ? "部分覆盖" : "查看证据",
+  }));
+  const body = node("div", { className: "candidate-body" });
+  card.append(summary);
+  body.append(node("p", { className: "candidate-description", text: candidate.description }));
+  body.append(node("p", {
     className: "candidate-meta score-breakdown",
     text: `需求匹配 ${Math.round((candidate.fitScore || 0) * 100)} · 能力覆盖 ${Math.round((candidate.coverageScore || 0) * 100)} · 就绪 ${Math.round((candidate.readinessScore || 0) * 100)} · 质量 ${Math.round((candidate.qualityScore || 0) * 100)} · 证据置信 ${Math.round((candidate.confidence || 0) * 100)}`,
   }));
@@ -774,7 +813,7 @@ function candidateCard(stage, candidate) {
     }),
     node("span", { text: candidate.readiness === "human-verified" ? "有绑定当前内容指纹的使用记录" : "静态匹配不等于运行成功" }),
   );
-  card.append(readiness);
+  body.append(readiness);
 
   const evidenceList = node("ul", { className: "evidence-list" });
   if (!candidate.evidence.length) {
@@ -788,13 +827,13 @@ function candidateCard(stage, candidate) {
     );
     evidenceList.append(item);
   }
-  card.append(evidenceList);
+  body.append(evidenceList);
 
-  if (candidate.warnings.length) card.append(list(candidate.warnings, "warning-list"));
-  if (candidate.optimization?.length) card.append(list(candidate.optimization, "optimization-list"));
+  if (candidate.warnings.length) body.append(list(candidate.warnings, "warning-list"));
+  if (candidate.optimization?.length) body.append(list(candidate.optimization, "optimization-list"));
   for (const suggestion of candidate.agentSuggestions || []) {
-    card.append(node("div", { className: "agent-suggestion" }, [
-      node("span", { className: "agent-badge", text: suggestion.actor?.name || "AI Agent" }),
+    body.append(node("div", { className: "agent-suggestion" }, [
+      node("span", { className: "agent-badge", text: suggestion.actor?.name || "未命名 Agent" }),
       node("span", { text: `${suggestion.recommendation} · ${suggestion.rationale}` }),
     ]));
   }
@@ -813,7 +852,7 @@ function candidateCard(stage, candidate) {
   });
   copy.addEventListener("click", () => copyPath(candidate.path));
   pathRow.append(inspect, copy);
-  card.append(pathRow);
+  body.append(pathRow);
 
   const actions = node("div", { className: "candidate-actions" });
   const confirm = node("button", {
@@ -845,7 +884,8 @@ function candidateCard(stage, candidate) {
   });
   install.addEventListener("click", handle(() => openInstallationDialog({ contentHash: candidate.contentHash })));
   actions.append(confirm, partial, exclude, install);
-  card.append(actions);
+  body.append(actions);
+  card.append(body);
   return card;
 }
 
@@ -853,7 +893,10 @@ function renderInspector() {
   if (!state.plan || !state.selectedStageId) return;
   const stage = state.plan.stages.find((item) => item.id === state.selectedStageId);
   if (!stage) return;
-  elements.inspector.replaceChildren();
+  const inspector = evidencePanelMedia.matches ? elements.evidenceDialogContent : elements.inspector;
+  const inactiveInspector = evidencePanelMedia.matches ? elements.inspector : elements.evidenceDialogContent;
+  inactiveInspector.replaceChildren();
+  inspector.replaceChildren();
 
   const header = node("header", { className: "inspector-header" });
   header.append(node("p", { className: "eyebrow", text: `${String(stage.order).padStart(2, "0")} · ${stage.phase}` }));
@@ -880,7 +923,7 @@ function renderInspector() {
   track.append(fill);
   confidence.append(confidenceLabel, track);
   header.append(confidence);
-  elements.inspector.append(header, node("div", { className: "reason-box", text: stage.reason }));
+  inspector.append(header, node("div", { className: "reason-box", text: stage.reason }));
 
   if (Object.keys(state.overrides[stage.id] || {}).length) {
     const reviewBar = node("div", { className: "review-bar" });
@@ -892,7 +935,7 @@ function renderInspector() {
     });
     reset.addEventListener("click", handle(() => resetStageDecisions(stage.id)));
     reviewBar.append(reset);
-    elements.inspector.append(reviewBar);
+    inspector.append(reviewBar);
   }
 
   const capabilities = node("section", { className: "inspector-section" });
@@ -950,33 +993,33 @@ function renderInspector() {
     }
     if (capability.agentSuggestions?.length) {
       item.title = capability.agentSuggestions
-        .map((suggestion) => `${suggestion.actor?.name || "AI Agent"}: ${suggestion.rationale}`)
+        .map((suggestion) => `${suggestion.actor?.name || "未命名 Agent"}: ${suggestion.rationale}`)
         .join("\n");
     }
     capabilityList.append(item);
   }
   capabilities.append(capabilityList);
-  elements.inspector.append(capabilities);
+  inspector.append(capabilities);
 
   const outputs = node("section", { className: "inspector-section" });
   outputs.append(node("h3", { text: "交付物" }), list(stage.deliverables, "deliverable-list"));
-  elements.inspector.append(outputs);
+  inspector.append(outputs);
 
   if (stage.dependencies?.length) {
     const dependencyTitles = stage.dependencies.map((dependency) =>
       state.plan.stages.find((item) => item.id === dependency)?.title || dependency);
     const dependencies = node("section", { className: "inspector-section" });
     dependencies.append(node("h3", { text: "前置依赖" }), list(dependencyTitles, "deliverable-list"));
-    elements.inspector.append(dependencies);
+    inspector.append(dependencies);
   }
 
   const gate = node("section", { className: "inspector-section" });
   gate.append(node("h3", { text: "进入下一阶段前" }), node("div", { className: "gate-box", text: stage.acceptanceGate }));
-  elements.inspector.append(gate);
+  inspector.append(gate);
 
   const questions = node("section", { className: "inspector-section" });
   questions.append(node("h3", { text: "渐进澄清" }), list(stage.questions, "question-list"));
-  elements.inspector.append(questions);
+  inspector.append(questions);
 
   const candidatesSection = node("section", { className: "inspector-section" });
   candidatesSection.append(node("h3", { text: `本机候选 · ${stage.candidates.length}` }));
@@ -987,10 +1030,34 @@ function renderInspector() {
     }));
   } else {
     const stack = node("div", { className: "candidate-stack" });
-    for (const candidate of stage.candidates) stack.append(candidateCard(stage, candidate));
+    const defaultCandidate = stage.candidates.find((candidate) => candidate.decision === "confirmed") || stage.candidates[0];
+    for (const candidate of stage.candidates) {
+      stack.append(candidateCard(stage, candidate, { open: candidate.id === defaultCandidate.id }));
+    }
     candidatesSection.append(stack);
   }
-  elements.inspector.append(candidatesSection);
+  inspector.append(candidatesSection);
+}
+
+function syncEvidencePanelMode() {
+  if (!evidencePanelMedia.matches && elements.evidenceDialog.open) {
+    evidenceReturnFocus = null;
+    elements.evidenceDialog.close();
+  }
+  renderInspector();
+}
+
+function syncHeaderActions() {
+  const exportGroup = elements.exportJson.closest(".export-group");
+  const movable = [elements.workspaceButton, elements.rescan, exportGroup];
+  if (compactHeaderMedia.matches) {
+    elements.headerMoreButton.hidden = false;
+    elements.headerMoreMenu.append(...movable);
+    return;
+  }
+  if (elements.headerMoreMenu.matches(":popover-open")) elements.headerMoreMenu.hidePopover();
+  elements.headerMoreButton.hidden = true;
+  for (const item of movable) elements.headerActions.insertBefore(item, elements.headerMoreButton);
 }
 
 function skillPreference(skill) {
@@ -1106,7 +1173,7 @@ function renderLocalCatalogList(entries) {
       state.catalog.selectedKey = entry.key;
       renderLocalCatalogList(entries);
       renderLocalCatalogDetail(entry);
-      if (window.innerWidth < 820) elements.catalogDetail.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (window.innerWidth <= 820) setCatalogNarrowView("detail", { focus: true });
     });
     elements.catalogList.append(item);
   }
@@ -1305,7 +1372,7 @@ function applyCatalogMode() {
   elements.catalogLocalToolbar.hidden = ecosystem;
   elements.catalogEcosystemToolbar.hidden = !ecosystem;
   elements.catalogRefresh.hidden = !ecosystem;
-  elements.catalogEyebrow.textContent = ecosystem ? "Ecosystem discovery index" : "Local inventory fieldbook";
+  elements.catalogEyebrow.textContent = ecosystem ? "公开生态候选" : "本机事实";
   elements.catalogDescription.textContent = ecosystem
     ? "从 Skills Atlas 公开元数据发现候选；所有记录仍需人工审阅，目录不会触发下载、安装或执行。"
     : "查看本机每份 Skill 的作用、来源、副本和冲突；正文不会发送到浏览器。";
@@ -1325,6 +1392,7 @@ function setCatalogMode(mode) {
   resetCatalogScroll();
   syncCatalogUrl();
   renderCatalog();
+  setCatalogNarrowView("list");
   elements.catalogSearch.focus();
 }
 
@@ -1406,7 +1474,7 @@ function renderEcosystemCatalogList(payload) {
       renderEcosystemCatalogList(payload);
       renderEcosystemCatalogDetail(item);
       resetCatalogScroll({ results: false });
-      if (window.innerWidth < 820) elements.catalogDetail.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (window.innerWidth <= 820) setCatalogNarrowView("detail", { focus: true });
     });
     elements.catalogList.append(card);
   }
@@ -1503,7 +1571,7 @@ function renderEcosystemComparisonPanel(item) {
   const heading = node("header", { className: "ecosystem-comparison-heading" });
   const copy = node("div");
   copy.append(
-    node("p", { className: "eyebrow", text: "Source evidence bench" }),
+    node("p", { className: "eyebrow", text: "来源证据核对" }),
     node("h4", { text: `同功能来源 · ${item.sourceCount}` }),
     node("p", { text: "把同一功能组的仓库证据并排核对，再决定记录哪一个；这里不生成综合安全分。" }),
   );
@@ -1736,7 +1804,7 @@ function renderEcosystemDocumentEvidence(payload) {
 
   const findings = node("aside", { className: "document-findings" });
   findings.append(
-    node("p", { className: "eyebrow", text: "Rule cues" }),
+    node("p", { className: "eyebrow", text: "规则线索" }),
     node("h5", { text: `静态线索 · ${(payload.review.findings || []).length}` }),
   );
   const parsed = node("div", { className: "document-frontmatter" });
@@ -1786,7 +1854,7 @@ function renderEcosystemDocumentReview(item) {
   const heading = node("header", { className: "document-review-heading" });
   const copy = node("div");
   copy.append(
-    node("p", { className: "eyebrow", text: "Pre-install source review" }),
+    node("p", { className: "eyebrow", text: "安装前来源审阅" }),
     node("h4", { text: "安装前原文审阅" }),
     node("p", { text: "服务端只读取目录映射的单份 SKILL.md；原文不交给模型，也不会触发安装或命令执行。" }),
   );
@@ -1890,7 +1958,7 @@ async function recordEcosystemChainCandidates(item, skillNames, gap, rationale) 
 function renderEcosystemChainCandidateForm(item) {
   const section = node("section", { className: "specimen-section ecosystem-record-panel ecosystem-chain-panel" });
   section.append(
-    node("p", { className: "eyebrow", text: "Chain coverage ledger" }),
+    node("p", { className: "eyebrow", text: "组合链覆盖记录" }),
     node("h4", { text: "组合链覆盖检查" }),
     node("p", {
       className: "muted",
@@ -1939,7 +2007,7 @@ function renderEcosystemChainCandidateForm(item) {
         : "当前来源没有可验证的安装映射";
   }
   summaryLocal.querySelector("strong").textContent = `${initialLocalCount}/${item.skills.length}`;
-  summaryRecorded.querySelector("strong").textContent = "—";
+  summaryRecorded.querySelector("strong").textContent = "待计算";
   summaryPending.querySelector("strong").textContent = String(initialPendingCount);
 
   if (!state.activeWorkflow || !state.plan) {
@@ -2051,7 +2119,7 @@ function renderEcosystemCandidateForm(item) {
   if (item.chain) return renderEcosystemChainCandidateForm(item);
   const section = node("section", { className: "specimen-section ecosystem-record-panel" });
   section.append(
-    node("p", { className: "eyebrow", text: "Controlled handoff" }),
+    node("p", { className: "eyebrow", text: "受控移交" }),
     node("h4", { text: "绑定到当前能力缺口" }),
     node("p", { className: "muted", text: "这里只保存候选元数据。接受候选、生成安装计划和实际写入仍是后续独立人工步骤。" }),
   );
@@ -2245,7 +2313,7 @@ function renderCatalog({ refresh = false } = {}) {
 function renderSavedMaps() {
   elements.savedMaps.replaceChildren();
   if (!state.workflows.length) {
-    elements.savedMaps.append(node("div", { className: "no-candidates", text: "尚无共享工作流。让 AI Agent 通过 MCP 提交草案后，即可在网页选择和审阅。" }));
+    elements.savedMaps.append(node("div", { className: "no-candidates", text: "尚无共享工作流。Agent 通过 MCP 提交草案后，即可在网页选择和审阅。" }));
     return;
   }
   for (const workflow of state.workflows) {
@@ -2579,7 +2647,7 @@ function renderSkillKitPreview() {
   const heading = node("header", { className: "skill-kit-preview-heading" });
   const copy = node("div");
   copy.append(
-    node("p", { className: "eyebrow", text: "Imported intent · comparison only" }),
+    node("p", { className: "eyebrow", text: "已导入意图 · 仅供核对" }),
     node("h3", { text: state.installation.kitFileName || "已导入项目 Skill Kit" }),
     node("p", { text: `${preview.manifest.workflow.goal || "未命名工作流"} · ${preview.workflowMatch === "same-workflow" ? "当前工作流" : "可移植意图"}` }),
   );
@@ -2912,15 +2980,14 @@ function renderNoWorkflow() {
   renderAssumptions();
   renderCounter();
   elements.stages.replaceChildren(node("div", {
-    className: "no-candidates",
-    text: "尚无可评估的工作流。通过 MCP 创建草案后，可在左侧选择并查看能力覆盖。",
+    className: "workbench-empty",
+    text: "让已连接的 Agent 通过 MCP 提交工作流草案。草案出现后，你可以在这里核对能力证据、人工确认并生成开发手册。",
   }));
   elements.inspector.replaceChildren(node("div", { className: "empty-inspector" }, [
-    node("div", { className: "empty-compass", attributes: { "aria-hidden": "true" } }, [node("span")]),
-    node("p", { className: "eyebrow", text: "Workflow desk" }),
     node("h2", { text: "等待工作流" }),
     node("p", { text: "选择一份工作流后，这里会展示阶段能力、匹配证据和缺口。" }),
   ]));
+  elements.evidenceDialogContent.replaceChildren();
   renderWorkflowPicker();
   renderWorkflowState();
   persistWorkspace({ silent: true });
@@ -3050,11 +3117,13 @@ function openCatalogDialog() {
   resetCatalogScroll();
   syncCatalogUrl();
   renderCatalog();
+  setCatalogNarrowView("list");
   if (!elements.catalogDialog.open) elements.catalogDialog.showModal();
   elements.catalogSearch.focus();
 }
 
 elements.catalogButton.addEventListener("click", openCatalogDialog);
+elements.catalogDetailBack.addEventListener("click", () => setCatalogNarrowView("list", { focus: true }));
 elements.catalogLocalTab.addEventListener("click", () => setCatalogMode("local"));
 elements.catalogEcosystemTab.addEventListener("click", () => setCatalogMode("ecosystem"));
 for (const tab of [elements.catalogLocalTab, elements.catalogEcosystemTab]) {
@@ -3118,7 +3187,10 @@ elements.catalogMore.addEventListener("click", () => {
   state.catalog.limit = Math.min(500, state.catalog.limit + 100);
   renderCatalog();
 });
-elements.catalogDialog.addEventListener("close", clearCatalogUrl);
+elements.catalogDialog.addEventListener("close", () => {
+  setCatalogNarrowView("list");
+  clearCatalogUrl();
+});
 document.addEventListener("keydown", (event) => {
   if (!(event.metaKey || event.ctrlKey) || event.key.toLocaleLowerCase() !== "k") return;
   event.preventDefault();
@@ -3194,7 +3266,16 @@ elements.confirmWorkflow.addEventListener("click", handle(async () => {
   toast(`已保存人工确认版本 v${workflow.confirmedVersion}`);
 }));
 
+elements.evidenceDialog.addEventListener("close", () => {
+  const target = evidenceReturnFocus;
+  evidenceReturnFocus = null;
+  if (target?.isConnected) target.focus();
+});
+evidencePanelMedia.addEventListener("change", syncEvidencePanelMode);
+compactHeaderMedia.addEventListener("change", syncHeaderActions);
+
 async function boot() {
+  syncHeaderActions();
   applyActiveMap();
   const openSharedCatalog = restoreCatalogFromUrl();
   renderWorkspaceDialog();

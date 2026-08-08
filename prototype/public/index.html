@@ -23,11 +23,11 @@
           <small>0.6</small>
         </div>
         <div>
-          <p class="eyebrow">Local capability atlas</p>
+          <p class="brand-product-name">Capability Atlas</p>
           <h1>能力测绘台</h1>
         </div>
       </div>
-      <div class="header-actions">
+      <div class="header-actions" id="header-actions">
         <span class="privacy-seal"><i aria-hidden="true"></i><span id="save-status">共享本机存储</span></span>
         <button class="button button-quiet" id="playbook-button" type="button">开发手册</button>
         <button class="button button-quiet" id="workspace-button" type="button">工作区</button>
@@ -36,6 +36,8 @@
           <button class="button button-quiet" id="export-json" type="button">备份</button>
           <button class="button button-primary" id="export-markdown" type="button">导出地图</button>
         </div>
+        <button class="button button-quiet header-more-button" id="header-more-button" type="button" popovertarget="header-more-menu" hidden>更多</button>
+        <div class="header-more-menu" id="header-more-menu" popover aria-label="页面操作"></div>
       </div>
     </header>
 
@@ -43,11 +45,10 @@
       <aside class="left-rail" aria-label="工作流与本机清单">
         <section class="goal-console panel">
           <div class="section-label">
-            <span class="section-index">A</span>
             <span>工作流</span>
           </div>
           <h2>选择工作流</h2>
-          <p class="muted">这里展示本机服务已保存的工作流。新流程由 AI Agent 通过 MCP 提交。</p>
+          <p class="muted">这里展示本机服务已保存的工作流。新流程由已连接的 Agent 通过 MCP 提交。</p>
           <label for="workflow-select">当前工作流</label>
           <div class="workflow-select-shell">
             <select id="workflow-select" disabled>
@@ -64,7 +65,6 @@
 
         <section class="inventory-panel panel" aria-labelledby="inventory-title">
           <div class="section-label">
-            <span class="section-index">B</span>
             <span>本机事实</span>
           </div>
           <div class="panel-heading-row">
@@ -72,24 +72,23 @@
             <span id="scan-time" class="utility-text">尚未扫描</span>
           </div>
           <div class="inventory-metrics" id="inventory-metrics" aria-live="polite">
-            <div><strong>—</strong><span>可达路径</span></div>
-            <div><strong>—</strong><span>唯一内容</span></div>
-            <div><strong>—</strong><span>同名异构</span></div>
-            <div><strong>—</strong><span>已禁用</span></div>
+            <div><strong>…</strong><span>可达路径</span></div>
+            <div><strong>…</strong><span>唯一内容</span></div>
+            <div><strong>…</strong><span>同名异构</span></div>
+            <div><strong>…</strong><span>已禁用</span></div>
           </div>
           <details class="roots-disclosure">
             <summary>查看扫描范围</summary>
             <ul id="root-list"></ul>
           </details>
           <button class="catalog-open" id="catalog-button" type="button">
-            浏览完整 Skill 标本册
+            <span class="catalog-open-label">Skill 标本册</span>
             <span aria-hidden="true">↗</span>
           </button>
         </section>
 
         <section class="legend-panel panel" aria-labelledby="legend-title">
           <div class="section-label">
-            <span class="section-index">C</span>
             <span>判断方法</span>
           </div>
           <h2 id="legend-title">四态不是质量分</h2>
@@ -103,23 +102,17 @@
       </aside>
 
       <main class="map-canvas" id="workflow-map" tabindex="-1">
-        <svg class="contour-field" viewBox="0 0 900 740" aria-hidden="true" preserveAspectRatio="none">
-          <path d="M-80 660 C150 450 105 165 410 104 S774 245 980 -42" />
-          <path d="M-115 695 C114 486 88 198 394 132 S780 272 1000 -14" />
-          <path d="M-150 730 C80 520 65 232 380 163 S790 303 1020 18" />
-          <path d="M-185 765 C48 554 44 266 366 194 S802 336 1040 50" />
-        </svg>
         <div class="map-heading">
           <div>
-            <p class="eyebrow">Expert reference × local evidence</p>
-            <h2>功能能力工作流</h2>
+            <p class="map-context">当前能力地图</p>
+            <h2>工作流能力地图</h2>
             <p id="map-subtitle">正在读取本机能力……</p>
           </div>
           <div class="coverage-counter" id="coverage-counter" aria-label="工作流覆盖摘要">
-            <span><b>—</b> 已确认</span>
-            <span><b>—</b> 本机有证据</span>
-            <span><b>—</b> 待确认</span>
-            <span><b>—</b> 缺失</span>
+            <span><b>…</b> 已确认</span>
+            <span><b>…</b> 本机有证据</span>
+            <span><b>…</b> 待确认</span>
+            <span><b>…</b> 缺失</span>
           </div>
         </div>
 
@@ -153,8 +146,6 @@
       <aside class="evidence-inspector" aria-label="阶段匹配证据">
         <div class="inspector-sticky" id="inspector-content">
           <div class="empty-inspector">
-            <div class="empty-compass" aria-hidden="true"><span></span></div>
-            <p class="eyebrow">Evidence desk</p>
             <h2>选择一个阶段</h2>
             <p>查看它需要什么能力、为什么匹配这些本机 Skill，以及哪些判断仍需你确认。</p>
           </div>
@@ -162,11 +153,21 @@
       </aside>
     </div>
 
+    <dialog class="evidence-dialog" id="evidence-dialog" aria-label="阶段匹配证据">
+      <div class="evidence-dialog-surface">
+        <form method="dialog" class="evidence-dialog-toolbar">
+          <span>阶段证据</span>
+          <button class="dialog-close" type="submit" aria-label="关闭阶段证据">×</button>
+        </form>
+        <div class="evidence-dialog-content" id="evidence-dialog-content"></div>
+      </div>
+    </dialog>
+
     <dialog class="atlas-dialog workflow-definition-dialog" id="workflow-definition-dialog" aria-labelledby="workflow-definition-title">
       <form class="dialog-surface workflow-definition-surface" id="workflow-definition-form">
         <header class="dialog-header">
           <div>
-            <p class="eyebrow">Confirmation brief</p>
+            <p class="dialog-context">工作流确认</p>
             <h2 id="workflow-definition-title">补齐工作流确认信息</h2>
             <p id="workflow-definition-note">这三项会和阶段、能力项及 Skill 判断一起保存为不可变人工版本。</p>
           </div>
@@ -200,8 +201,8 @@
       <div class="dialog-surface playbook-surface">
         <header class="dialog-header playbook-header">
           <div>
-            <p class="eyebrow">Vibe Coding × Loop Engineering</p>
-            <h2 id="playbook-title">从 0 到 1 开发手册</h2>
+            <p class="dialog-context">项目执行依据</p>
+            <h2 id="playbook-title">开发手册</h2>
             <p id="playbook-dialog-status">选择工作流后，先补齐并冻结 Project Brief。</p>
           </div>
           <div class="playbook-header-actions">
@@ -220,7 +221,7 @@
       <div class="dialog-surface">
         <header class="dialog-header">
           <div>
-            <p class="eyebrow" id="catalog-eyebrow">Local inventory fieldbook</p>
+            <p class="dialog-context" id="catalog-eyebrow">本机事实与生态候选</p>
             <h2 id="catalog-title">Skill 标本册</h2>
             <p id="catalog-description">查看本机每份 Skill 的作用、来源、副本和冲突；正文不会发送到浏览器。</p>
           </div>
@@ -233,7 +234,7 @@
           <button id="catalog-ecosystem-tab" type="button" role="tab" aria-selected="false">
             <span>生态候选</span><small>公开元数据、未安装</small>
           </button>
-          <p id="catalog-source-note">本机内容按指纹去重；正文不进入浏览器。</p>
+          <p class="catalog-source-note" id="catalog-source-note">本机内容按指纹去重；正文不进入浏览器。</p>
         </div>
         <div class="catalog-search-strip">
           <label class="search-field">
@@ -293,12 +294,13 @@
           </label>
         </div>
         <div class="catalog-summary" id="catalog-summary" aria-live="polite"></div>
-        <div class="catalog-layout">
+        <div class="catalog-layout" id="catalog-layout" data-narrow-view="list">
+          <button class="catalog-detail-back" id="catalog-detail-back" type="button">← 返回结果</button>
           <section class="catalog-results" aria-label="Skill 搜索结果">
             <div class="catalog-list" id="catalog-list"></div>
             <button class="catalog-more" id="catalog-more" type="button">再显示 100 项</button>
           </section>
-          <aside class="catalog-detail" id="catalog-detail" aria-label="Skill 详情">
+          <aside class="catalog-detail" id="catalog-detail" aria-label="Skill 详情" tabindex="-1">
             <div class="catalog-empty">
               <span aria-hidden="true">⌖</span>
               <h3>选择一份 Skill</h3>
@@ -313,7 +315,7 @@
       <div class="dialog-surface installation-surface">
         <header class="dialog-header installation-header">
           <div>
-            <p class="eyebrow">Controlled installation receipt</p>
+            <p class="dialog-context">受控安装回执</p>
             <h2 id="installation-title">Skill 安装回执单</h2>
             <p>这里只执行网页端人工确认过的计划。MCP 可以提案，但不能触发命令或写入 Skill 目录。</p>
           </div>
@@ -323,7 +325,7 @@
         <div class="installation-grid">
           <aside class="installation-controls">
             <section>
-              <p class="eyebrow">01 · Target agents</p>
+              <p class="eyebrow">步骤 1 · 目标 Agent</p>
               <h3>选择发现端</h3>
               <p class="installation-help">共享来源固定写入 <code id="installation-shared-root">~/.agents/skills</code>；目标 Agent 只能从已识别白名单中选择。</p>
               <div class="agent-target-list" id="installation-targets"></div>
@@ -332,7 +334,7 @@
               </button>
             </section>
             <section class="installation-policy">
-              <p class="eyebrow">02 · Safety boundary</p>
+              <p class="eyebrow">步骤 2 · 安全边界</p>
               <h3>写入规则</h3>
               <ul>
                 <li>本地 Skill：共享目录和 Agent 目录使用受管符号链接。</li>
@@ -342,7 +344,7 @@
               </ul>
             </section>
             <section class="installation-kit-controls">
-              <p class="eyebrow">03 · Reproducible intent</p>
+              <p class="eyebrow">步骤 3 · 可复现意图</p>
               <h3>项目 Skill Kit</h3>
               <p class="installation-help">把已保存的选择导出为不含路径和命令的项目意图清单；导入只核对本机状态，不自动同步或删除。</p>
               <div class="installation-kit-actions">
@@ -378,7 +380,7 @@
       <div class="dialog-surface workspace-surface">
         <header class="dialog-header">
           <div>
-            <p class="eyebrow">Local workspace</p>
+            <p class="dialog-context">本机工作区</p>
             <h2 id="workspace-title">地图工作区</h2>
             <p>工作流、Agent 建议和人工确认历史由本机服务统一保存，并与 MCP Agent 共享。</p>
           </div>
@@ -388,7 +390,7 @@
           <section>
             <div class="workspace-heading">
               <div>
-                <p class="eyebrow">Shared workflows</p>
+                <p class="eyebrow">共享工作流</p>
                 <h3>共享工作流记录</h3>
               </div>
               <span class="workspace-agent-note">由 MCP Agent 创建</span>
@@ -396,7 +398,7 @@
             <div class="saved-map-list" id="saved-map-list"></div>
           </section>
           <section>
-            <p class="eyebrow">Scan boundary</p>
+            <p class="eyebrow">扫描边界</p>
             <h3>额外 Skill 目录</h3>
             <p class="workspace-help">每行一个目录。允许使用 <code>~/…</code>；出于安全考虑不能扫描磁盘根目录或整个主目录。</p>
             <label for="custom-roots">自定义只读扫描根</label>
@@ -404,7 +406,7 @@
             <button class="button button-primary" id="save-roots-button" type="button">保存并重新扫描</button>
           </section>
           <section class="workspace-backup">
-            <p class="eyebrow">Portable evidence</p>
+            <p class="eyebrow">可移植记录</p>
             <h3>备份与恢复</h3>
             <p class="workspace-help">备份包含共享工作流与人工确认历史，但不包含 Skill 正文；恢复时采用安全合并。</p>
             <div class="workspace-actions">
