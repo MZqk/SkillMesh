@@ -46,6 +46,22 @@ test("compiles the fixed nine-stage Web workflow into manual executable steps", 
   assert.equal(playbook.stages.every((stage) => stage.steps[0].prompt.copyable === true), true);
   assert.match(playbook.stages[0].steps[0].prompt.text, /任务灯塔/);
   assert.equal(playbookContentHash(playbook).length, 64);
+
+  const standard = normalizePlaybookInput(
+    await compilePlaybookDraft({ workflow, projectBrief, depth: "auto" }),
+    { id: "playbook-standard", workflowId: workflow.id },
+  );
+  assert.equal(standard.planningDepth, "standard");
+  assert.equal(standard.stages.length, 5);
+  assert.equal(standard.stages.reduce((total, stage) => total + stage.steps.length, 0), 5);
+
+  const quick = normalizePlaybookInput(
+    await compilePlaybookDraft({ workflow, projectBrief, depth: "quick" }),
+    { id: "playbook-quick", workflowId: workflow.id },
+  );
+  assert.equal(quick.planningDepth, "quick");
+  assert.equal(quick.stages.length, 3);
+  assert.deepEqual(quick.stages.map((stage) => stage.dependencies.length), [0, 1, 1]);
 });
 
 test("rejects a required stage that is not an executable, recoverable unit", () => {

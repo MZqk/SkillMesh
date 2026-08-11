@@ -169,7 +169,7 @@ test("versions a frozen Project Brief and a maintainer-confirmed Playbook indepe
   assert.equal(revisionDiff.baseVersion, 1);
   assert.equal(revisionDiff.changes.some((item) => item.path === "summary"), true);
   assert.equal((await store.getProjectBriefVersion(workflow.id, 1)).snapshot.constraints[0], "两周 MVP");
-  assert.equal((await store.getPlaybookVersion(workflow.id, 1)).snapshot.summary.includes("按九阶段编排本机 Skill"), true);
+  assert.equal((await store.getPlaybookVersion(workflow.id, 1)).snapshot.summary.includes("按完整深度编排本机 Skill"), true);
 
   const backup = await store.exportData();
   const restored = new WorkflowStore({ filePath: path.join(directory, "restored.json") });

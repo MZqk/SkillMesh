@@ -5,11 +5,12 @@ import { pathToFileURL } from "node:url";
 
 import { CatalogService } from "./lib/catalog-service.mjs";
 import { EcosystemCatalogService } from "./lib/ecosystem-catalog.mjs";
-import { planToMarkdown } from "./lib/exporter.mjs";
 import { InstallationManager } from "./lib/installation-manager.mjs";
 import { buildPlan } from "./lib/matcher.mjs";
+import { QuickSkillService } from "./lib/quick-skill-service.mjs";
 import { buildSkillKit, reconcileSkillKit } from "./lib/skill-kit.mjs";
 import {
+  QuickSkillStateConflictError,
   WorkflowConflictError,
   WorkflowNotFoundError,
   WorkflowStore,
@@ -81,7 +82,7 @@ async function runAgentTask({ task, context }) {
   }
   const model = process.env.CODEX_MODEL || "codex-mini-latest";
   const systemPrompt = [
-    "你是 Capability Atlas 的本地 AI 助手。Capability Atlas 是一个把功能需求映射到本机 Agent Skill 的能力测绘工具。",
+    "你是 SkillMesh 的本地 AI 助手。SkillMesh 是一个把功能需求映射到本机 Agent Skill 的技能测绘工具。",
     context
       ? `以下是当前工作流的上下文（JSON 摘要），用于回答或处理用户任务：\n${context}`
       : "没有附加工作流上下文。",
@@ -136,7 +137,7 @@ function projectBriefVersionRoute(pathname) {
 }
 
 function playbookRoute(pathname) {
-  const match = pathname.match(/^\/api\/workflows\/([^/]+)\/playbook(?:\/(generate|confirm|history|export|diff|verification|template-status|template-preview|template-migrate))?$/);
+  const match = pathname.match(/^\/api\/workflows\/([^/]+)\/playbook(?:\/(generate|confirm|lock|history|export|diff|verification|template-status|template-preview|template-migrate))?$/);
   if (!match) return null;
   return { id: decodeURIComponent(match[1]), action: match[2] || null };
 }
@@ -147,7 +148,7 @@ function playbookVersionRoute(pathname) {
 }
 
 function playbookProgressRoute(pathname) {
-  const match = pathname.match(/^\/api\/workflows\/([^/]+)\/playbook\/progress(?:\/(start|steps|gates))?$/);
+  const match = pathname.match(/^\/api\/workflows\/([^/]+)\/playbook\/progress(?:\/(start|steps|gates|complete))?$/);
   if (!match) return null;
   return { id: decodeURIComponent(match[1]), action: match[2] || null };
 }
@@ -196,6 +197,11 @@ function ecosystemSkillDocumentRoute(pathname) {
   } : null;
 }
 
+function localSkillContentRoute(pathname) {
+  const match = pathname.match(/^\/api\/skills\/([^/]+)\/content$/);
+  return match ? { id: decodeURIComponent(match[1]) } : null;
+}
+
 export function createServer(options = {}) {
   const store = options.store || options.service?.store || new WorkflowStore();
   const service = options.service || new CatalogService({
@@ -217,6 +223,7 @@ export function createServer(options = {}) {
     sourceUrl: options.ecosystemSourceUrl,
     githubToken: options.githubToken ?? process.env.CAPABILITY_ATLAS_GITHUB_TOKEN,
   });
+  const quickSkills = options.quickSkills || new QuickSkillService({ store, service });
   const server = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://127.0.0.1");
@@ -229,7 +236,7 @@ export function createServer(options = {}) {
           installationExecution: "web-only",
           workflowPersistence: true,
           mcpTransport: "stdio",
-          version: "0.6.0",
+          version: "0.7.0",
         });
         return;
       }
@@ -244,6 +251,13 @@ export function createServer(options = {}) {
       }
       if (request.method === "GET" && url.pathname === "/api/scan") {
         sendJson(response, 200, await service.publicInventory({ refresh: url.searchParams.get("refresh") === "1" }));
+        return;
+      }
+      const localSkillContentRequest = localSkillContentRoute(url.pathname);
+      if (localSkillContentRequest && request.method === "GET") {
+        sendJson(response, 200, await service.getSkillContent(localSkillContentRequest.id, {
+          maxChars: url.searchParams.get("maxChars"),
+        }));
         return;
       }
       if (request.method === "GET" && url.pathname === "/api/ecosystem/catalog") {
@@ -290,11 +304,33 @@ export function createServer(options = {}) {
         sendJson(response, 200, await store.updateSettings({ customRoots: body.customRoots || [] }, webActor()));
         return;
       }
+      if (request.method === "GET" && url.pathname === "/api/quick-skill-state") {
+        sendJson(response, 200, await store.getQuickSkillState());
+        return;
+      }
+      if (request.method === "POST" && url.pathname === "/api/quick-skill-state/migrate") {
+        const body = await readJson(request);
+        sendJson(response, 200, await store.migrateLegacyQuickSkillState(body, webActor()));
+        return;
+      }
+      if (request.method === "PATCH" && url.pathname === "/api/quick-skill-state") {
+        const body = await readJson(request);
+        sendJson(response, 200, await store.updateQuickSkillState(body, webActor()));
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/api/quick-skill-deck") {
+        sendJson(response, 200, await quickSkills.snapshot({
+          workflowId: url.searchParams.has("workflowId") ? url.searchParams.get("workflowId") : undefined,
+          stageId: url.searchParams.has("stageId") ? url.searchParams.get("stageId") : undefined,
+          refresh: url.searchParams.get("refresh") === "1",
+        }));
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/api/workspace/export") {
         sendJson(response, 200, {
           kind: "capability-atlas-shared-workspace",
           exportedAt: new Date().toISOString(),
-          appVersion: "0.6.0",
+          appVersion: "0.7.0",
           data: await store.exportData(),
         });
         return;
@@ -450,7 +486,12 @@ export function createServer(options = {}) {
         return;
       }
       if (projectBriefRequest && request.method === "GET" && !projectBriefRequest.action) {
-        sendJson(response, 200, await store.getProjectBrief(projectBriefRequest.id, { includeHistory: true }));
+        try {
+          sendJson(response, 200, await store.getProjectBrief(projectBriefRequest.id, { includeHistory: true }));
+        } catch (error) {
+          if (url.searchParams.get("optional") === "1" && error.message === "project-brief-not-found") sendJson(response, 200, null);
+          else throw error;
+        }
         return;
       }
       if (projectBriefRequest && request.method === "POST" && !projectBriefRequest.action) {
@@ -481,7 +522,12 @@ export function createServer(options = {}) {
         return;
       }
       if (playbookProgressRequest && request.method === "GET" && !playbookProgressRequest.action) {
-        sendJson(response, 200, await store.getPlaybookProgress(playbookProgressRequest.id));
+        try {
+          sendJson(response, 200, await store.getPlaybookProgress(playbookProgressRequest.id));
+        } catch (error) {
+          if (url.searchParams.get("optional") === "1" && error.message === "playbook-progress-not-started") sendJson(response, 200, null);
+          else throw error;
+        }
         return;
       }
       if (playbookProgressRequest && request.method === "POST" && playbookProgressRequest.action === "start") {
@@ -493,13 +539,23 @@ export function createServer(options = {}) {
         sendJson(response, 200, await store.updatePlaybookStepProgress(playbookProgressRequest.id, body, webActor()));
         return;
       }
+      if (playbookProgressRequest && request.method === "PATCH" && playbookProgressRequest.action === "complete") {
+        const body = await readJson(request);
+        sendJson(response, 200, await store.completePlaybookStepAndAdvance(playbookProgressRequest.id, body, webActor()));
+        return;
+      }
       if (playbookProgressRequest && request.method === "PATCH" && playbookProgressRequest.action === "gates") {
         const body = await readJson(request);
         sendJson(response, 200, await store.setPlaybookGateProgress(playbookProgressRequest.id, body, webActor()));
         return;
       }
       if (playbookRequest && request.method === "GET" && !playbookRequest.action) {
-        sendJson(response, 200, await store.getPlaybook(playbookRequest.id, { includeHistory: true }));
+        try {
+          sendJson(response, 200, await store.getPlaybook(playbookRequest.id, { includeHistory: true }));
+        } catch (error) {
+          if (url.searchParams.get("optional") === "1" && error.message === "playbook-not-found") sendJson(response, 200, null);
+          else throw error;
+        }
         return;
       }
       if (playbookRequest && request.method === "GET" && playbookRequest.action === "diff") {
@@ -546,6 +602,11 @@ export function createServer(options = {}) {
       if (playbookRequest && request.method === "POST" && playbookRequest.action === "confirm") {
         const body = await readJson(request);
         sendJson(response, 200, await store.confirmPlaybook(playbookRequest.id, body, webActor()));
+        return;
+      }
+      if (playbookRequest && request.method === "POST" && playbookRequest.action === "lock") {
+        const body = await readJson(request);
+        sendJson(response, 200, await service.lockExecutionBaseline(playbookRequest.id, body, webActor()));
         return;
       }
       if (playbookRequest && request.method === "GET" && playbookRequest.action === "history") {
@@ -612,6 +673,8 @@ export function createServer(options = {}) {
           capabilityId: body.capabilityId,
           query: body.query,
           rationale: body.rationale,
+          reviewedContentHash: body.reviewedContentHash,
+          reviewedContentHashes: body.reviewedContentHashes,
         };
         const candidates = Array.isArray(body.skillNames)
           ? await ecosystemCatalog.candidatesForChain({ ...candidateInput, skillNames: body.skillNames })
@@ -642,19 +705,6 @@ export function createServer(options = {}) {
         sendJson(response, 200, { workflowId: workflow.id, items: workflow.history || [] });
         return;
       }
-      if (workflowRequest && request.method === "GET" && workflowRequest.action === "export") {
-        const format = url.searchParams.get("format") === "markdown" ? "markdown" : "json";
-        const exported = await service.exportWorkflow(workflowRequest.id, { format, includePaths: true });
-        if (format === "markdown") {
-          response.writeHead(200, {
-            "content-type": "text/markdown; charset=utf-8",
-            "content-disposition": 'attachment; filename="capability-workflow.md"',
-            "content-length": Buffer.byteLength(exported),
-          });
-          response.end(exported);
-        } else sendJson(response, 200, exported);
-        return;
-      }
       if (request.method === "POST" && url.pathname === "/api/plan") {
         const body = await readJson(request);
         if (body.workflowId) {
@@ -667,39 +717,6 @@ export function createServer(options = {}) {
           inventory: await service.inventory({ customRootPaths: body.customRoots || [] }),
         });
         sendJson(response, 200, result);
-        return;
-      }
-      if (request.method === "POST" && url.pathname === "/api/export") {
-        const body = await readJson(request);
-        if (body.workflowId) {
-          const format = body.format === "markdown" ? "markdown" : "json";
-          const exported = await service.exportWorkflow(body.workflowId, { format, includePaths: true });
-          if (format === "markdown") {
-            response.writeHead(200, {
-              "content-type": "text/markdown; charset=utf-8",
-              "content-disposition": 'attachment; filename="capability-workflow.md"',
-              "content-length": Buffer.byteLength(exported),
-            });
-            response.end(exported);
-          } else sendJson(response, 200, exported);
-          return;
-        }
-        const plan = await buildPlan({
-          goal: body.goal,
-          overrides: body.overrides || {},
-          inventory: await service.inventory({ customRootPaths: body.customRoots || [] }),
-        });
-        if (body.format === "markdown") {
-          const markdown = planToMarkdown(plan);
-          response.writeHead(200, {
-            "content-type": "text/markdown; charset=utf-8",
-            "content-disposition": 'attachment; filename="capability-map.md"',
-            "content-length": Buffer.byteLength(markdown),
-          });
-          response.end(markdown);
-          return;
-        }
-        sendJson(response, 200, plan);
         return;
       }
       if (request.method !== "GET" && request.method !== "HEAD") {
@@ -731,6 +748,7 @@ export function createServer(options = {}) {
         "workflow-stage-not-found",
         "workflow-capability-not-found",
         "project-brief-object-required",
+        "project-brief-required",
         "project-brief-workflow-required",
         "project-brief-already-exists",
         "project-brief-patch-required",
@@ -743,6 +761,8 @@ export function createServer(options = {}) {
         "playbook-already-exists",
         "playbook-patch-required",
         "playbook-project-brief-version-not-found",
+        "playbook-project-brief-draft-changed",
+        "playbook-brief-changed-regenerate-required",
         "human-playbook-confirmation-required",
         "frozen-project-brief-required",
         "too-many-playbooks",
@@ -794,6 +814,8 @@ export function createServer(options = {}) {
         "external-install-rename-unsupported",
         "ecosystem-catalog-invalid",
         "ecosystem-skill-not-recordable",
+        "ecosystem-skill-review-required",
+        "ecosystem-reviewed-content-changed",
         "ecosystem-skill-preview-unavailable",
         "ecosystem-skill-source-unsupported",
         "ecosystem-gap-required",
@@ -808,6 +830,11 @@ export function createServer(options = {}) {
         "skill-kit-hash-required",
         "skill-kit-hash-mismatch",
         "skill-kit-empty",
+        "quick-skill-operation-required",
+        "quick-skill-operation-unsupported",
+        "quick-skill-expected-revision-required",
+        "quick-skill-favorite-invalid",
+        "quick-skill-content-hash-required",
       ]);
       const isValidationError = error.message.startsWith("workflow-not-confirmable:")
         || error.message.startsWith("project-brief-not-freezable:")
@@ -837,9 +864,10 @@ export function createServer(options = {}) {
         ? error.status
         : error.message.startsWith("pdf-renderer-unavailable:")
         ? 503
-        : error instanceof WorkflowConflictError
+        : error instanceof WorkflowConflictError || error instanceof QuickSkillStateConflictError
         ? 409
         : error.message === "installation-job-active" || error.message === "installation-plan-stale" || error.message === "installation-needs-repair"
+          || error.message === "skill-content-changed-refresh-required"
           ? 409
         : error instanceof WorkflowNotFoundError || error.message === "skill-not-found"
           || error.message === "project-brief-not-found" || error.message === "project-brief-version-not-found"
@@ -852,6 +880,8 @@ export function createServer(options = {}) {
           || error.message === "ecosystem-item-not-found"
           || error.message === "ecosystem-group-not-found"
           || error.message === "ecosystem-skill-document-not-found"
+          || error.message === "quick-skill-workflow-not-found"
+          || error.message === "quick-skill-stage-not-found"
           ? 404
           : error.message === "request-too-large"
         ? 413
@@ -861,12 +891,15 @@ export function createServer(options = {}) {
       sendJson(response, status, {
         error: status === 503 ? "service-unavailable" : status === 409 ? "conflict" : status === 404 ? "not-found" : status < 500 ? "invalid-request" : "internal-error",
         message: error.message,
-        ...(error instanceof WorkflowConflictError ? { currentRevision: error.currentRevision } : {}),
+        ...(error instanceof WorkflowConflictError || error instanceof QuickSkillStateConflictError
+          ? { currentRevision: error.currentRevision }
+          : {}),
       });
     }
   });
   server.installationManager = installations;
   server.ecosystemCatalog = ecosystemCatalog;
+  server.quickSkillService = quickSkills;
   return server;
 }
 
@@ -881,7 +914,7 @@ export async function startServer({
   });
   const address = server.address();
   const resolvedPort = typeof address === "object" && address ? address.port : port;
-  console.log(`Capability Atlas 0.6: http://${host}:${resolvedPort}`);
+  console.log(`SkillMesh 0.7: http://${host}:${resolvedPort}`);
   console.log("Skill writes require a Web-confirmed installation plan; MCP tools cannot execute installation jobs.");
   return server;
 }

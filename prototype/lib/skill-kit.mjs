@@ -166,7 +166,7 @@ export function buildSkillKit({ workflow, plan }) {
       order: index + 1,
       name: item.name,
       type: item.type,
-      contentHash: item.installedContentHash || item.contentHash || "",
+      contentHash: item.installedContentHash || item.contentHash || item.reviewedContentHash || "",
       packageId: item.packageId || candidate?.packageId || "",
       sourceUrl: item.sourceUrl || candidate?.sourceUrl || "",
       version: item.version || "",

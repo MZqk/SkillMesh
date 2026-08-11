@@ -55,6 +55,9 @@ export function defaultSkillRoots({
 } = {}) {
   const userRoots = [
     rootEntry(path.join(homeDirectory, ".agents/skills"), "agent-skills", "user", "通用 Agent Skills"),
+    rootEntry(path.join(homeDirectory, ".config/agents/skills"), "agent-skills", "user", "XDG 通用 Agent Skills", {
+      stability: "documented",
+    }),
     rootEntry(path.join(homeDirectory, ".codex/skills"), "codex", "user", "Codex 用户 Skill"),
     rootEntry(path.join(homeDirectory, ".codex/plugins/cache"), "codex", "plugin-cache", "Codex 插件缓存", {
       stability: "observed",
@@ -70,6 +73,34 @@ export function defaultSkillRoots({
       stability: "observed",
       sourceKind: "derived",
     }),
+    rootEntry(path.join(homeDirectory, ".gemini/skills"), "gemini-cli", "user", "Gemini CLI 用户 Skill"),
+    rootEntry(path.join(homeDirectory, ".gemini/config/plugins"), "gemini-cli", "plugin-cache", "Gemini CLI 插件 Skill", {
+      stability: "observed",
+      sourceKind: "derived",
+    }),
+    rootEntry(path.join(homeDirectory, ".gemini/antigravity/skills"), "antigravity", "user", "Antigravity 用户 Skill"),
+    rootEntry(path.join(homeDirectory, ".gemini/antigravity/builtin/skills"), "antigravity", "internal", "Antigravity 内置 Skill", {
+      stability: "observed",
+      sourceKind: "derived",
+    }),
+    rootEntry(path.join(homeDirectory, ".gemini/antigravity-cli/skills"), "antigravity-cli", "user", "Antigravity CLI 用户 Skill"),
+    rootEntry(path.join(homeDirectory, ".gemini/antigravity-cli/builtin/skills"), "antigravity-cli", "internal", "Antigravity CLI 内置 Skill", {
+      stability: "observed",
+      sourceKind: "derived",
+    }),
+    rootEntry(path.join(homeDirectory, ".gemini/antigravity-ide/plugins"), "antigravity", "plugin-cache", "Antigravity IDE 插件 Skill", {
+      stability: "observed",
+      sourceKind: "derived",
+    }),
+    rootEntry(path.join(homeDirectory, ".kiro/skills"), "kiro", "user", "Kiro 用户 Skill"),
+    rootEntry(path.join(homeDirectory, ".trae/skills"), "trae", "user", "Trae 用户 Skill", {
+      stability: "observed",
+    }),
+    rootEntry(path.join(homeDirectory, ".config/opencode/skills"), "opencode", "user", "OpenCode 用户 Skill"),
+    rootEntry(path.join(homeDirectory, ".windsurf/skills"), "windsurf", "user", "Windsurf 用户 Skill"),
+    rootEntry(path.join(homeDirectory, ".cline/skills"), "cline", "user", "Cline 用户 Skill"),
+    rootEntry(path.join(homeDirectory, ".continue/skills"), "continue", "user", "Continue 用户 Skill"),
+    rootEntry(path.join(homeDirectory, ".copilot/skills"), "github-copilot", "user", "GitHub Copilot 用户 Skill"),
     rootEntry(path.join(homeDirectory, ".workbuddy/skills"), "workbuddy", "user", "WorkBuddy 用户 Skill", {
       stability: "observed",
     }),
@@ -101,6 +132,18 @@ export function defaultSkillRoots({
     rootEntry(path.join(projectRoot, ".codex/skills"), "codex", "project", "项目 Codex Skill"),
     rootEntry(path.join(projectRoot, ".claude/skills"), "claude", "project", "项目 Claude Skill"),
     rootEntry(path.join(projectRoot, ".cursor/skills"), "cursor", "project", "项目 Cursor Skill"),
+    rootEntry(path.join(projectRoot, ".gemini/skills"), "gemini-cli", "project", "项目 Gemini CLI Skill", {
+      stability: "observed",
+    }),
+    rootEntry(path.join(projectRoot, ".kiro/skills"), "kiro", "project", "项目 Kiro Skill"),
+    rootEntry(path.join(projectRoot, ".trae/skills"), "trae", "project", "项目 Trae Skill", {
+      stability: "observed",
+    }),
+    rootEntry(path.join(projectRoot, ".opencode/skills"), "opencode", "project", "项目 OpenCode Skill"),
+    rootEntry(path.join(projectRoot, ".windsurf/skills"), "windsurf", "project", "项目 Windsurf Skill"),
+    rootEntry(path.join(projectRoot, ".cline/skills"), "cline", "project", "项目 Cline Skill"),
+    rootEntry(path.join(projectRoot, ".continue/skills"), "continue", "project", "项目 Continue Skill"),
+    rootEntry(path.join(projectRoot, ".github/skills"), "github-copilot", "project", "项目 GitHub Copilot Skill"),
     rootEntry(path.join(projectRoot, "skills"), "openclaw", "project", "项目 OpenClaw / ClawHub Skill"),
   ];
 

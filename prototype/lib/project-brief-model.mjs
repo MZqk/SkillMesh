@@ -21,23 +21,43 @@ function normalizeDeliveryTarget(value) {
   return allowed.has(value) ? value : "deployable-mvp";
 }
 
+function inferredPlatforms(requirement, goal) {
+  const explicit = stringList(requirement.targetPlatforms, { maximum: 20, itemMaximum: 100 });
+  if (explicit.length) return explicit;
+  const signal = `${requirement.taskType || ""} ${goal || ""} ${(requirement.preferredStack || []).join(" ")}`.toLowerCase();
+  if (/android|安卓|kotlin|compose/.test(signal)) return ["Android"];
+  if (/ios|iphone|ipad|swiftui/.test(signal)) return ["iOS"];
+  if (/macos|mac app|桌面应用/.test(signal)) return ["macOS"];
+  if (/\bweb\b|网页|网站|next\.js|react|vue|浏览器/.test(signal)) return ["Web"];
+  return ["当前工作环境"];
+}
+
 export function seedProjectBrief(workflow) {
   const requirement = workflow?.requirement || {};
+  const goal = text(workflow?.goal, 2_000) || "完成当前工作流目标";
   const desiredOutputs = stringList(requirement.desiredOutputs);
   const acceptanceCriteria = stringList(workflow?.acceptanceCriteria);
+  const targetUsers = stringList(requirement.targetUsers, { maximum: 50, itemMaximum: 300 });
+  const nonGoals = stringList(workflow?.nonGoals);
+  const constraints = stringList(requirement.constraints);
+  const preferredStack = stringList(requirement.preferredStack, { maximum: 50, itemMaximum: 100 });
+  const assumptions = [];
+  if (!targetUsers.length) assumptions.push("目标用户由工作流目标自动推断，锁定执行基线前可修改。");
+  if (!desiredOutputs.length) assumptions.push("首版范围由工作流目标自动推断，锁定执行基线前可修改。");
+  if (!preferredStack.length) assumptions.push("技术栈默认沿用当前项目，锁定执行基线前可修改。");
   return {
-    sourceGoal: text(workflow?.goal, 2_000),
-    projectName: text(workflow?.goal, 300),
-    problemStatement: text(workflow?.scopeDescription || workflow?.goal),
-    targetUsers: stringList(requirement.targetUsers, { maximum: 50, itemMaximum: 300 }),
-    primaryOutcome: text(desiredOutputs[0] || acceptanceCriteria[0]),
-    inScope: desiredOutputs,
-    outOfScope: stringList(workflow?.nonGoals),
-    constraints: stringList(requirement.constraints),
-    successCriteria: acceptanceCriteria,
-    targetPlatforms: stringList(requirement.targetPlatforms, { maximum: 20, itemMaximum: 100 }),
-    preferredStack: stringList(requirement.preferredStack, { maximum: 50, itemMaximum: 100 }),
-    assumptions: [],
+    sourceGoal: goal,
+    projectName: text(goal, 300),
+    problemStatement: text(workflow?.scopeDescription || goal),
+    targetUsers: targetUsers.length ? targetUsers : [`需要完成“${goal}”的首要用户`],
+    primaryOutcome: text(desiredOutputs[0] || acceptanceCriteria[0] || `完成“${goal}”并获得可验收结果`),
+    inScope: desiredOutputs.length ? desiredOutputs : [`完成“${goal}”的最小可行主路径`],
+    outOfScope: nonGoals.length ? nonGoals : ["当前工作流未明确列出的扩展能力"],
+    constraints: constraints.length ? constraints : ["无额外约束"],
+    successCriteria: acceptanceCriteria.length ? acceptanceCriteria : [`“${goal}”的主路径可以完成并通过验收`],
+    targetPlatforms: inferredPlatforms(requirement, goal),
+    preferredStack: preferredStack.length ? preferredStack : ["沿用当前项目技术栈"],
+    assumptions,
     openQuestions: [],
     deploymentTarget: "deployable-mvp",
   };
@@ -131,8 +151,29 @@ export function assertProjectBriefFreezable(brief) {
   }
 }
 
+export function projectBriefContentHash(brief) {
+  const content = {
+    sourceGoal: text(brief?.sourceGoal, 2_000),
+    projectName: text(brief?.projectName, 300),
+    problemStatement: text(brief?.problemStatement),
+    targetUsers: stringList(brief?.targetUsers, { maximum: 50, itemMaximum: 300 }),
+    primaryOutcome: text(brief?.primaryOutcome),
+    inScope: stringList(brief?.inScope),
+    outOfScope: stringList(brief?.outOfScope),
+    constraints: stringList(brief?.constraints),
+    successCriteria: stringList(brief?.successCriteria),
+    targetPlatforms: stringList(brief?.targetPlatforms, { maximum: 20, itemMaximum: 100 }),
+    preferredStack: stringList(brief?.preferredStack, { maximum: 50, itemMaximum: 100 }),
+    assumptions: stringList(brief?.assumptions),
+    openQuestions: stringList(brief?.openQuestions),
+    deploymentTarget: normalizeDeliveryTarget(brief?.deploymentTarget),
+  };
+  return crypto.createHash("sha256").update(JSON.stringify(content)).digest("hex");
+}
+
 export function publicProjectBrief(brief, { includeCompleteness = true } = {}) {
   const result = structuredClone(brief);
   if (includeCompleteness) result.completeness = projectBriefCompleteness(brief);
+  result.contentHash = projectBriefContentHash(brief);
   return result;
 }

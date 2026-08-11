@@ -35,7 +35,7 @@ async function probeWebUi(url, fetchImpl, timeoutMs = 750) {
     return health?.ok === true
       && health?.workflowPersistence === true
       && health?.mcpTransport === "stdio"
-      && health?.version === "0.6.0";
+      && health?.version === "0.7.0";
   } catch {
     return false;
   } finally {
@@ -248,8 +248,8 @@ export function createWebUiController(options = {}) {
         browserOpened,
         ...(browserWarning ? { browserWarning } : {}),
         message: browserOpened
-          ? "Capability Atlas Web UI is ready for visual review and human confirmation."
-          : `Capability Atlas Web UI is ready. Open ${state.url} for visual review.`,
+          ? "SkillMesh Web UI is ready for visual review and human confirmation."
+          : `SkillMesh Web UI is ready. Open ${state.url} for visual review.`,
       };
     },
 

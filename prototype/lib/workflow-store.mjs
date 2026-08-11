@@ -24,6 +24,7 @@ import {
 import {
   assertProjectBriefFreezable,
   normalizeProjectBriefInput,
+  projectBriefContentHash,
   publicProjectBrief,
 } from "./project-brief-model.mjs";
 import {
@@ -33,6 +34,12 @@ import {
   normalizeWorkflowInput,
   publicWorkflow,
 } from "./workflow-model.mjs";
+import {
+  applyQuickSkillOperation,
+  emptyQuickSkillState,
+  migrateLegacyQuickSkillState,
+  normalizeQuickSkillState,
+} from "./quick-skill-state.mjs";
 
 const MAX_STORE_BYTES = 20 * 1024 * 1024;
 const MAX_EVENTS = 5_000;
@@ -58,6 +65,14 @@ export class WorkflowNotFoundError extends Error {
   }
 }
 
+export class QuickSkillStateConflictError extends Error {
+  constructor(currentRevision) {
+    super("quick-skill-state-conflict");
+    this.name = "QuickSkillStateConflictError";
+    this.currentRevision = currentRevision;
+  }
+}
+
 export function defaultDataDirectory() {
   if (process.env.CAPABILITY_ATLAS_DATA_DIR) return path.resolve(process.env.CAPABILITY_ATLAS_DATA_DIR);
   if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "Capability Atlas");
@@ -78,6 +93,7 @@ function emptyStore() {
     revision: 0,
     updatedAt: null,
     settings: { customRoots: [], revision: 0 },
+    quickSkillState: emptyQuickSkillState(),
     workflows: [],
     confirmations: [],
     projectBriefs: [],
@@ -154,6 +170,28 @@ function event(type, workflow, actor, details = {}) {
 function ensureExpectedRevision(workflow, expectedRevision) {
   if (!Number.isInteger(expectedRevision) || expectedRevision < 1) throw new Error("expected-revision-required");
   if (workflow.revision !== expectedRevision) throw new WorkflowConflictError(workflow.revision);
+}
+
+function assertPlaybookProjectBriefSource(data, workflowId, input) {
+  const source = input?.source || {};
+  const briefVersion = Number(source.projectBriefVersion) || 0;
+  if (briefVersion > 0) {
+    if (!data.projectBriefConfirmations.some((item) => item.workflowId === workflowId && item.version === briefVersion)) {
+      throw new Error("playbook-project-brief-version-not-found");
+    }
+    return;
+  }
+  const current = data.projectBriefs.find((item) => item.workflowId === workflowId);
+  if (!current) throw new Error("project-brief-not-found");
+  const snapshot = source.projectBriefSnapshot;
+  const contentHash = projectBriefContentHash(current);
+  if (!snapshot
+    || source.projectBriefId !== current.id
+    || Number(source.projectBriefRevision) !== current.revision
+    || source.projectBriefContentHash !== contentHash
+    || projectBriefContentHash(snapshot) !== contentHash) {
+    throw new Error("playbook-project-brief-draft-changed");
+  }
 }
 
 function progressSummary(playbook, progress) {
@@ -233,6 +271,7 @@ export class WorkflowStore {
         ...emptyStore(),
         ...parsed,
         settings: { ...emptyStore().settings, ...(parsed.settings || {}) },
+        quickSkillState: normalizeQuickSkillState(parsed.quickSkillState),
         confirmations: Array.isArray(parsed.confirmations) ? parsed.confirmations : [],
         projectBriefs: Array.isArray(parsed.projectBriefs) ? parsed.projectBriefs : [],
         projectBriefConfirmations: Array.isArray(parsed.projectBriefConfirmations) ? parsed.projectBriefConfirmations : [],
@@ -335,6 +374,52 @@ export class WorkflowStore {
       data.settings = { customRoots: roots, revision: (data.settings.revision || 0) + 1 };
       data.events.push(event("settings.updated", null, actor, { customRoots: roots.length }));
       return data.settings;
+    });
+  }
+
+  async getQuickSkillState() {
+    const data = await this.#readUnlocked();
+    return normalizeQuickSkillState(data.quickSkillState);
+  }
+
+  async migrateLegacyQuickSkillState(input = {}, actor = { type: "human", name: "local-user", channel: "web" }) {
+    return this.#mutate((data) => {
+      const migration = migrateLegacyQuickSkillState(data.quickSkillState, input, data.workflows);
+      if (migration.migrated) {
+        data.quickSkillState = {
+          ...migration.state,
+          revision: migration.state.revision + 1,
+          updatedAt: new Date().toISOString(),
+        };
+        data.events.push(event("quick-skill-state.migrated", null, actor, {
+          favorites: data.quickSkillState.favorites.length,
+          recent: data.quickSkillState.recent.length,
+        }));
+      } else {
+        data.quickSkillState = migration.state;
+      }
+      return { migrated: migration.migrated, state: data.quickSkillState };
+    });
+  }
+
+  async updateQuickSkillState({ expectedRevision, operation }, actor = { type: "agent", name: "unknown-agent", channel: "mcp" }) {
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      throw new Error("quick-skill-expected-revision-required");
+    }
+    return this.#mutate((data) => {
+      const current = normalizeQuickSkillState(data.quickSkillState);
+      if (current.revision !== expectedRevision) throw new QuickSkillStateConflictError(current.revision);
+      const next = applyQuickSkillOperation(current, operation, data.workflows);
+      data.quickSkillState = {
+        ...next,
+        revision: current.revision + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      data.events.push(event(`quick-skill-state.${operation.type}`, null, actor, {
+        workflowId: data.quickSkillState.activeWorkflowId,
+        contentHash: operation.contentHash || null,
+      }));
+      return data.quickSkillState;
     });
   }
 
@@ -711,10 +796,7 @@ export class WorkflowStore {
       if (!workflow) throw new WorkflowNotFoundError();
       if (data.playbooks.some((item) => item.workflowId === workflowId)) throw new Error("playbook-already-exists");
       if (data.playbooks.length >= MAX_PLAYBOOKS) throw new Error("too-many-playbooks");
-      const briefVersion = Number(input?.source?.projectBriefVersion);
-      if (!data.projectBriefConfirmations.some((item) => item.workflowId === workflowId && item.version === briefVersion)) {
-        throw new Error("playbook-project-brief-version-not-found");
-      }
+      assertPlaybookProjectBriefSource(data, workflowId, input);
       const playbook = normalizePlaybookInput({
         ...input,
         workflowId,
@@ -728,7 +810,7 @@ export class WorkflowStore {
     });
   }
 
-  async updatePlaybook(workflowId, { expectedRevision, patch }, actor = { type: "agent", name: "unknown-agent", channel: "mcp" }) {
+  async updatePlaybook(workflowId, { expectedRevision, patch, replaceStages = false }, actor = { type: "agent", name: "unknown-agent", channel: "mcp" }) {
     const normalizedActor = normalizeActor(actor);
     if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("playbook-patch-required");
     return this.#mutate((data) => {
@@ -738,7 +820,7 @@ export class WorkflowStore {
       if (index < 0) throw new Error("playbook-not-found");
       const current = data.playbooks[index];
       ensureExpectedRevision(current, expectedRevision);
-      if (patch.stages) {
+      if (patch.stages && !replaceStages) {
         const incomingIds = new Set(patch.stages.map((stage) => String(stage?.id || "")));
         const removed = current.stages.find((stage) => !incomingIds.has(stage.id));
         if (removed) throw new Error(`playbook-stage-removal-not-allowed:${removed.id}`);
@@ -760,10 +842,7 @@ export class WorkflowStore {
         revision: current.revision + 1,
         timestamps: { createdAt: current.createdAt, updatedAt: now },
       });
-      const briefVersion = candidate.source.projectBriefVersion;
-      if (!data.projectBriefConfirmations.some((item) => item.workflowId === workflowId && item.version === briefVersion)) {
-        throw new Error("playbook-project-brief-version-not-found");
-      }
+      assertPlaybookProjectBriefSource(data, workflowId, candidate);
       data.playbooks[index] = candidate;
       data.events.push(event(wasConfirmed ? "playbook.revision-started" : "playbook.updated", workflow, normalizedActor, {
         playbookId: candidate.id,
@@ -1085,6 +1164,105 @@ export class WorkflowStore {
         stageId,
         stepId,
         status,
+      }));
+      return publicPlaybookProgress(updated);
+    });
+  }
+
+  async completePlaybookStepAndAdvance(workflowId, {
+    expectedRevision,
+    stageId,
+    stepId,
+    notes = "",
+    evidence = [],
+  }, actor) {
+    const normalizedActor = normalizeActor(actor, { type: "human", name: "local-user", channel: "web" });
+    if (normalizedActor.type !== "human") throw new Error("human-playbook-progress-required");
+    if (!stageId || !stepId) throw new Error("playbook-progress-step-required");
+    return this.#mutate((data) => {
+      const workflow = data.workflows.find((item) => item.id === workflowId);
+      if (!workflow) throw new WorkflowNotFoundError();
+      const playbook = data.playbooks.find((item) => item.workflowId === workflowId);
+      if (!playbook) throw new Error("playbook-not-found");
+      const contentHash = publicPlaybook(playbook).contentHash;
+      const index = data.playbookProgress.findIndex((item) =>
+        item.playbookId === playbook.id && item.playbookContentHash === contentHash);
+      if (index < 0) throw new Error("playbook-progress-not-started");
+      const current = data.playbookProgress[index];
+      ensureExpectedRevision(current, expectedRevision);
+      const { stage, step } = playbookStageAndStep(playbook, stageId, stepId);
+      if (stage.applicability === "not-applicable") throw new Error("playbook-stage-not-applicable");
+      for (const dependencyId of stage.dependencies || []) {
+        const gate = current.gates.find((item) => item.stageId === dependencyId);
+        if (!gate || !["passed", "not-applicable"].includes(gate.status)) {
+          throw new Error(`playbook-stage-dependency-gate-open:${stageId}:${dependencyId}`);
+        }
+      }
+      const cleanEvidence = normalizeProgressEvidence(evidence);
+      if (stage.qualityGate.level === "hard" && !cleanEvidence.length) {
+        throw new Error("playbook-step-completion-requires-evidence");
+      }
+      const cleanNotes = String(notes || "").trim().slice(0, 4_000);
+      const now = new Date().toISOString();
+      const steps = structuredClone(current.steps || []);
+      const existingStep = steps.findIndex((item) => item.stageId === stageId && item.stepId === stepId);
+      const stepRecord = {
+        stageId,
+        stepId,
+        status: "completed",
+        acceptanceResult: "passed",
+        notes: cleanNotes,
+        evidence: cleanEvidence,
+        updatedAt: now,
+        updatedBy: normalizedActor,
+      };
+      if (existingStep >= 0) steps[existingStep] = stepRecord;
+      else steps.push(stepRecord);
+
+      const stageRecords = stage.steps.map((item) => steps.find((record) =>
+        record.stageId === stageId && record.stepId === item.id));
+      const stageComplete = stageRecords.every((record) => record
+        && record.status === "completed"
+        && record.acceptanceResult === "passed"
+        && (stage.qualityGate.level !== "hard" || record.evidence.length));
+      const gates = structuredClone(current.gates || []);
+      const existingGate = gates.findIndex((item) => item.stageId === stageId);
+      const gateAlreadyPassed = existingGate >= 0 && ["passed", "not-applicable"].includes(gates[existingGate].status);
+      if (stageComplete && !gateAlreadyPassed) {
+        const gateRecord = {
+          stageId,
+          status: "passed",
+          rationale: cleanNotes
+            ? `完成“${step.title}”并验收通过：${cleanNotes}`
+            : "本阶段全部步骤已完成并验收通过。",
+          evidence: normalizeProgressEvidence(stageRecords.flatMap((record) => record.evidence || [])),
+          updatedAt: now,
+          updatedBy: normalizedActor,
+        };
+        if (existingGate >= 0) gates[existingGate] = gateRecord;
+        else gates.push(gateRecord);
+      }
+
+      const updated = normalizePlaybookProgressInput({
+        ...current,
+        steps,
+        gates,
+        updatedBy: normalizedActor,
+      }, {
+        id: current.id,
+        workflowId,
+        playbookId: playbook.id,
+        playbookContentHash: contentHash,
+        revision: current.revision + 1,
+        timestamps: { createdAt: current.createdAt, updatedAt: now },
+      });
+      data.playbookProgress[index] = updated;
+      data.events.push(event("playbook-progress.step-completed", workflow, normalizedActor, {
+        playbookId: playbook.id,
+        progressId: updated.id,
+        stageId,
+        stepId,
+        gateAdvanced: stageComplete && !gateAlreadyPassed,
       }));
       return publicPlaybookProgress(updated);
     });

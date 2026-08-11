@@ -111,6 +111,9 @@ function externalItems(workflow, targets, homeDirectory) {
       const name = externalName(candidate);
       const installName = safeSkillDirectoryName(name, `external-${candidate.id.slice(0, 8)}`);
       const unsupportedAgents = targets.filter((target) => !target.externalInstallSupported).map((target) => target.id);
+      const reviewedContentHash = String(candidate.reviewedContentHash || "").toLowerCase();
+      const hasReviewedContent = /^[a-f0-9]{64}$/u.test(reviewedContentHash);
+      const reviewedHighRisk = ["high", "critical"].includes(candidate.reviewedSeverity);
       return [{
         id: itemId("external", candidate.id),
         externalCandidateId: candidate.id,
@@ -120,9 +123,15 @@ function externalItems(workflow, targets, homeDirectory) {
         installName,
         sourcePath: "",
         contentHash: "",
+        reviewedContentHash,
+        reviewedAt: candidate.reviewedAt || "",
+        reviewedRepository: candidate.reviewedRepository || "",
+        reviewedBranch: candidate.reviewedBranch || "",
+        reviewedPath: candidate.reviewedPath || "",
+        reviewedSeverity: candidate.reviewedSeverity || "none",
         packageId: candidate.packageId,
         sourceUrl: candidate.sourceUrl,
-        version: "latest-at-execution",
+        version: hasReviewedContent ? `reviewed-sha256:${reviewedContentHash.slice(0, 16)}` : "unreviewed",
         sourceKind: "external",
         supportedAgents: targets.filter((target) => target.externalInstallSupported).map((target) => target.id),
         targetAgents: targets.map((target) => target.id),
@@ -131,10 +140,15 @@ function externalItems(workflow, targets, homeDirectory) {
         installMode: "skills-cli",
         capabilityRefs: [capability],
         score: 0,
-        eligible: unsupportedAgents.length === 0,
+        eligible: unsupportedAgents.length === 0 && hasReviewedContent && !reviewedHighRisk,
         selected: false,
         status: "planned",
-        riskFlags: ["pre-scan-visible", ...(unsupportedAgents.length ? ["external-target-unsupported"] : [])],
+        riskFlags: [
+          "pre-scan-visible",
+          ...(!hasReviewedContent ? ["reviewed-content-missing"] : []),
+          ...(reviewedHighRisk ? ["reviewed-content-high-risk"] : []),
+          ...(unsupportedAgents.length ? ["external-target-unsupported"] : []),
+        ],
         incompatibleAgents: unsupportedAgents,
         conflict: { status: "unchecked", resolution: "keep", renameTo: "" },
         acknowledgements: [],

@@ -1,6 +1,6 @@
 {
-  "name": "capability-atlas",
-  "version": "0.6.0",
+  "name": "skillmesh",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Local Skill capability maps with shared workflow history and Web-approved managed installation plans.",
@@ -9,6 +9,11 @@
     "mcp": "node mcp-server.mjs",
     "scan": "node cli.mjs scan",
     "plan": "node cli.mjs plan",
+    "build:widget": "node scripts/build-widget.mjs",
+    "check:widget": "node scripts/build-widget.mjs --check",
+    "build:plugin": "node scripts/build-plugin-runtime.mjs",
+    "check:plugin": "node scripts/build-plugin-runtime.mjs --check",
+    "validate:plugin": "node scripts/validate-plugin.mjs",
     "setup:pdf": "node scripts/setup-pdf.mjs",
     "test": "node --test"
   },
@@ -16,7 +21,11 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "1.30.0",
     "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }

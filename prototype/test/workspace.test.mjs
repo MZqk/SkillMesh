@@ -42,7 +42,7 @@ test("persists multiple maps, custom roots, and content-bound reviews", () => {
 });
 
 test("rejects malformed backups and falls back from corrupt local storage", () => {
-  assert.throws(() => normalizeWorkspace({ maps: [] }), /没有能力地图/);
+  assert.throws(() => normalizeWorkspace({ maps: [] }), /没有技能地图/);
   const storage = {
     getItem: () => "{broken",
     setItem: () => {},

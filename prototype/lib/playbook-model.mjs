@@ -224,13 +224,22 @@ function normalizeStages(value) {
 
 function normalizeSource(value, workflowId) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const briefSnapshot = source.projectBriefSnapshot
+    && typeof source.projectBriefSnapshot === "object"
+    && !Array.isArray(source.projectBriefSnapshot)
+    ? structuredClone(source.projectBriefSnapshot)
+    : null;
   return {
     workflowId,
     workflowRevision: Math.max(1, Number(source.workflowRevision) || 1),
     workflowReferenceId: text(source.workflowReferenceId, 200),
     workflowReferenceVersion: text(source.workflowReferenceVersion, 100),
     projectBriefId: text(source.projectBriefId, 200),
-    projectBriefVersion: Math.max(1, Number(source.projectBriefVersion) || 1),
+    projectBriefVersion: Math.max(0, Number(source.projectBriefVersion) || 0),
+    projectBriefRevision: Math.max(1, Number(source.projectBriefRevision) || 1),
+    projectBriefStatus: source.projectBriefStatus === "frozen" ? "frozen" : "draft",
+    projectBriefContentHash: text(source.projectBriefContentHash, 200).toLowerCase(),
+    projectBriefSnapshot: briefSnapshot,
     templateId: text(source.templateId, 200) || "web-product-playbook",
     templateVersion: text(source.templateVersion, 100) || "0.1.0",
     templateContentHash: text(source.templateContentHash, 200),
@@ -261,6 +270,9 @@ export function normalizePlaybookInput(value, {
     deliveryTarget: ["local-prototype", "deployable-mvp", "production-ready"].includes(value.deliveryTarget)
       ? value.deliveryTarget
       : "deployable-mvp",
+    planningDepth: ["quick", "standard", "full"].includes(value.planningDepth)
+      ? value.planningDepth
+      : "full",
     goldenStack: stringList(value.goldenStack, { maximum: 50, itemMaximum: 200 }),
     source: normalizeSource(value.source, resolvedWorkflowId),
     skillBindingAssessment: normalizeSkillBindingAssessment(value.skillBindingAssessment),
@@ -287,6 +299,7 @@ export function playbookContentHash(playbook) {
     summary: playbook.summary,
     audience: playbook.audience,
     deliveryTarget: playbook.deliveryTarget,
+    planningDepth: playbook.planningDepth,
     goldenStack: playbook.goldenStack,
     source: playbook.source,
     skillBindingAssessment: playbook.skillBindingAssessment,
@@ -322,6 +335,9 @@ export function assertPlaybookConfirmable(playbook) {
 
 export function publicPlaybook(playbook) {
   const result = structuredClone(playbook);
+  if (!result.planningDepth) {
+    result.planningDepth = result.stages?.length <= 3 ? "quick" : result.stages?.length <= 5 ? "standard" : "full";
+  }
   result.contentHash = playbookContentHash(playbook);
   return result;
 }

@@ -1,0 +1,153 @@
+{
+  "id": "web-product-lifecycle",
+  "name": "从方向到上线 Web 产品",
+  "version": "0.1.0",
+  "referenceType": "human-curated",
+  "description": "面向非技术方向输入的产品生命周期参考图。AI 可以裁剪和解释，不得把参考图伪装成唯一正确流程。",
+  "stages": [
+    {
+      "id": "frame-direction",
+      "order": 1,
+      "phase": "探索",
+      "title": "把方向变成问题",
+      "summary": "确认谁遇到了什么问题，以及为什么值得现在解决。",
+      "description": "在讨论技术方案前，先把宽泛方向转成目标用户、使用情境、问题陈述和可证伪假设。",
+      "dependencies": [],
+      "deliverables": ["问题陈述", "目标用户与使用情境", "关键假设清单"],
+      "acceptanceGate": "能用一句话说明为谁解决什么问题，并指出目前仍依赖哪些假设。",
+      "questions": ["谁会最先使用它？", "他们现在如何完成这件事？", "什么变化能证明问题被缓解？"],
+      "capabilities": [
+        {"id": "discovery", "label": "用户与问题研究", "terms": ["user research", "customer research", "interview", "discovery", "research", "用户研究", "访谈", "调研"]},
+        {"id": "problem-framing", "label": "问题界定", "terms": ["problem framing", "problem statement", "jobs to be done", "jtbd", "grill", "需求澄清", "问题定义"]}
+      ]
+    },
+    {
+      "id": "validate-opportunity",
+      "order": 2,
+      "phase": "验证",
+      "title": "验证机会与替代方案",
+      "summary": "用公开证据和轻量实验判断是否值得做。",
+      "description": "研究现有产品、替代行为、市场变化与风险，明确继续、收窄或停止的判断门。",
+      "dependencies": ["frame-direction"],
+      "deliverables": ["竞品与替代方案地图", "需求证据", "立项与停止条件"],
+      "acceptanceGate": "至少有一组可复核证据支持问题存在，并能说出方案为何不只是已有工具的复制。",
+      "questions": ["用户已经在用什么替代？", "哪个证据最可能推翻立项？"],
+      "capabilities": [
+        {"id": "market-research", "label": "市场与竞品研究", "terms": ["market research", "competitive analysis", "competitor", "deep research", "market sizing", "市场调研", "竞品"]},
+        {"id": "evidence-analysis", "label": "证据分析", "terms": ["evidence", "benchmark", "analysis", "research report", "validate", "证据", "验证"]}
+      ]
+    },
+    {
+      "id": "shape-product",
+      "order": 3,
+      "phase": "定义",
+      "title": "冻结产品边界",
+      "summary": "定义首个用户结果、范围、约束与成功指标。",
+      "description": "把机会转成可交付的产品定义，明确不做什么、如何衡量，以及哪些决定需要在实现前锁定。",
+      "dependencies": ["validate-opportunity"],
+      "deliverables": ["V0 产品说明", "范围与非目标", "成功指标与风险"],
+      "acceptanceGate": "团队能判断一个需求是否属于 V0，且每个关键指标都有可观察行为。",
+      "questions": ["第一个必须改变的用户行为是什么？", "哪些功能应明确推迟？"],
+      "capabilities": [
+        {"id": "product-spec", "label": "产品规格", "terms": ["product spec", "prd", "requirements", "product management", "spec", "产品规格", "需求"]},
+        {"id": "planning", "label": "计划与决策审查", "terms": ["planning", "plan review", "ceo review", "strategy", "roadmap", "计划", "决策"]}
+      ]
+    },
+    {
+      "id": "design-experience",
+      "order": 4,
+      "phase": "设计",
+      "title": "设计可理解的体验",
+      "summary": "把用户结果转成信息结构、关键路径和界面反馈。",
+      "description": "先确定任务流与信息层级，再定义视觉系统、响应式行为、无障碍和异常状态。",
+      "dependencies": ["shape-product"],
+      "deliverables": ["关键用户流程", "界面原型", "设计验收标准"],
+      "acceptanceGate": "目标用户无需理解内部技术即可完成主任务，关键失败和空状态都有明确下一步。",
+      "questions": ["用户第一眼必须理解什么？", "哪个交互最容易造成误解？"],
+      "capabilities": [
+        {"id": "ux-design", "label": "体验与交互设计", "terms": ["ux", "interaction design", "product design", "user flow", "wireframe", "体验设计", "交互"]},
+        {"id": "visual-design", "label": "视觉与前端设计", "terms": ["frontend design", "design system", "ui design", "visual design", "responsive", "accessibility", "界面设计", "前端设计"]}
+      ]
+    },
+    {
+      "id": "build-foundation",
+      "order": 5,
+      "phase": "构建",
+      "title": "建立工程基础",
+      "summary": "选择最小架构，打通数据、权限与本地开发路径。",
+      "description": "建立可运行骨架、数据模型、接口边界、错误处理和安全默认值，避免在功能增长后返工基础约束。",
+      "dependencies": ["shape-product", "design-experience"],
+      "deliverables": ["可运行应用骨架", "数据与接口模型", "安全与隐私边界"],
+      "acceptanceGate": "新环境能按文档启动；数据流和权限边界可解释；没有把秘密或高权限默认暴露给客户端。",
+      "questions": ["哪些数据必须留在本机？", "失败时系统如何降级？"],
+      "capabilities": [
+        {"id": "web-architecture", "label": "Web 架构与脚手架", "terms": ["web app", "web application", "web architecture", "application architecture", "software architecture", "scaffold", "full stack", "backend architecture", "web 开发", "应用架构"]},
+        {"id": "security-design", "label": "安全与数据边界", "terms": ["security", "privacy", "threat model", "auth", "permissions", "secure", "安全", "隐私", "权限"]}
+      ]
+    },
+    {
+      "id": "implement-slice",
+      "order": 6,
+      "phase": "实现",
+      "title": "交付端到端切片",
+      "summary": "优先完成一条真实可用的主路径，而不是堆叠孤立页面。",
+      "description": "实现前端、服务、数据和边界状态，使第一个用户结果从输入到输出完整闭环。",
+      "dependencies": ["build-foundation"],
+      "deliverables": ["端到端主流程", "真实数据状态", "可维护的实现说明"],
+      "acceptanceGate": "主流程不依赖演示假数据；刷新、空状态和失败恢复均可复现。",
+      "questions": ["最小端到端结果是什么？", "哪些技术债会阻断下一次迭代？"],
+      "capabilities": [
+        {"id": "frontend-build", "label": "前端实现", "terms": ["frontend", "react", "vue", "html", "css", "javascript", "typescript", "前端", "网页"]},
+        {"id": "service-build", "label": "服务与数据实现", "terms": ["api", "backend", "database", "server", "postgres", "python", "node", "服务端", "数据库"]}
+      ]
+    },
+    {
+      "id": "assure-quality",
+      "order": 7,
+      "phase": "验收",
+      "title": "证明它可以被信任",
+      "summary": "验证功能、体验、安全与回归，而不只确认页面能打开。",
+      "description": "覆盖自动测试、真实浏览器流程、无障碍、性能、安全检查和高风险边界。",
+      "dependencies": ["implement-slice"],
+      "deliverables": ["自动化测试结果", "浏览器验收记录", "风险与已知限制"],
+      "acceptanceGate": "主流程在真实浏览器通过；关键回归可自动发现；高风险限制对用户可见。",
+      "questions": ["最昂贵的失败是什么？", "哪项验收目前仍只能由人判断？"],
+      "capabilities": [
+        {"id": "test-automation", "label": "测试与浏览器验收", "terms": ["playwright", "browser test", "e2e", "qa", "test", "testing", "浏览器测试", "质量"]},
+        {"id": "review-security", "label": "评审与安全检查", "terms": ["code review", "review", "security review", "audit", "canary", "guard", "评审", "安全检查"]}
+      ]
+    },
+    {
+      "id": "launch-product",
+      "order": 8,
+      "phase": "发布",
+      "title": "安全地上线",
+      "summary": "建立可回退的发布、配置、域名和运行健康检查。",
+      "description": "选择托管方式，冻结发布检查表，完成部署、观测、回滚和用户可见说明。",
+      "dependencies": ["assure-quality"],
+      "deliverables": ["可访问的正式环境", "发布与回滚记录", "运行健康检查"],
+      "acceptanceGate": "正式地址可用；部署可重复；出现故障时知道如何回滚和确认恢复。",
+      "questions": ["谁负责确认上线成功？", "回滚需要保留哪些状态？"],
+      "capabilities": [
+        {"id": "deployment", "label": "部署与发布", "terms": ["deploy", "deployment", "release", "ship", "hosting", "vercel", "cloudflare", "上线", "部署", "发布"]},
+        {"id": "operations", "label": "运行与健康检查", "terms": ["observability", "monitoring", "health check", "telemetry", "operations", "sentry", "监控", "健康检查"]}
+      ]
+    },
+    {
+      "id": "learn-iterate",
+      "order": 9,
+      "phase": "迭代",
+      "title": "从真实使用中学习",
+      "summary": "把行为证据转成下一轮取舍，而不是自动扩张范围。",
+      "description": "收集关键行为、反馈和失败模式，回顾假设，决定优化、补齐能力或停止。",
+      "dependencies": ["launch-product"],
+      "deliverables": ["关键行为数据", "反馈与问题分类", "下一轮继续/调整/停止决定"],
+      "acceptanceGate": "能回答用户是否获得核心结果，并有证据决定下一项改变。",
+      "questions": ["用户是否会第二次使用？", "哪个缺口真正阻碍了结果？"],
+      "capabilities": [
+        {"id": "analytics", "label": "产品数据与诊断", "terms": ["analytics", "metrics", "posthog", "dashboard", "kpi", "data analysis", "数据分析", "指标"]},
+        {"id": "feedback-learning", "label": "反馈与复盘", "terms": ["feedback", "retro", "retrospective", "learn", "iteration", "user feedback", "复盘", "反馈", "迭代"]}
+      ]
+    }
+  ]
+}

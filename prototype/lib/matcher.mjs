@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { canonicalSkills } from "./skill-identity.mjs";
+
 const TEMPLATE_PATHS = {
   web: path.resolve(import.meta.dirname, "../data/web-product-workflow.json"),
   android: path.resolve(import.meta.dirname, "../data/android-product-workflow.json"),
@@ -70,24 +72,6 @@ function indexSkill(skill) {
     summaryTokens: new Set(tokenize(`${skill.name || ""} ${skill.description || ""} ${(skill.keywords || []).join(" ")}`)),
     corpus: normalize(`${skill.name || ""} ${skill.description || ""} ${(skill.keywords || []).join(" ")} ${skill.searchText || ""}`),
   };
-}
-
-function preference(skill) {
-  const scope = { project: 5, user: 4, custom: 3, "plugin-cache": 2, internal: 1 }[skill.scope] || 0;
-  return (skill.enabled === false ? -100 : 0)
-    + (skill.sourceKind === "direct" ? 20 : 0)
-    + scope
-    + (skill.metadataStatus === "complete" ? 1 : 0);
-}
-
-function canonicalSkills(skills) {
-  const byContent = new Map();
-  for (const skill of skills) {
-    const identityKey = skill.contentHash || skill.id;
-    const current = byContent.get(identityKey);
-    if (!current || preference(skill) > preference(current)) byContent.set(identityKey, skill);
-  }
-  return [...byContent.values()];
 }
 
 function compatibleWithAgents(skill, targetAgents) {
@@ -295,6 +279,7 @@ function candidateView(aggregate, validations, suggestions) {
     name: skill.name,
     description: skill.description || "未提供 description",
     provider: skill.provider,
+    providers: skill.providers || [skill.provider],
     scope: skill.scope,
     sourceKind: skill.sourceKind,
     supportedAgents: skill.supportedAgents || [],
@@ -533,7 +518,13 @@ export async function buildPlan({
       readinessScore: round(readinessScore),
       qualityScore: round(quality),
       confidence: round(confidence, 2),
-      coverage: { matched: covered.length, total: coverageCapabilities.length, ratio: round(strongCoverage, 2) },
+      coverage: {
+        matched: covered.length,
+        confirmed: confirmedCoverageItems.length,
+        total: coverageCapabilities.length,
+        ratio: round(strongCoverage, 2),
+        confirmedRatio: round(confirmedCoverage, 2),
+      },
       capabilityCoverage,
       reason: reasonFor(status, covered.length, coverageCapabilities.length, confirmedCoverageItems.length, confirmedCandidates),
       candidates,
@@ -586,12 +577,18 @@ export async function buildPlan({
       counts,
       matchScore: round(weighted("matchScore")),
       matchPercent: Math.round(weighted("matchScore") * 100),
+      // Kept for API compatibility. This is lexical evidence coverage, not
+      // proof that a Skill was reviewed or succeeded at runtime.
       coverageRatio: round(totalRequired ? stages.reduce((sum, stage) => sum + stage.coverage.matched, 0) / totalRequired : 0),
+      evidencedCoverageRatio: round(totalRequired ? stages.reduce((sum, stage) => sum + stage.coverage.matched, 0) / totalRequired : 0),
+      confirmedCoverageRatio: round(totalRequired ? stages.reduce((sum, stage) => sum + stage.coverage.confirmed, 0) / totalRequired : 0),
       readinessScore: round(weighted("readinessScore")),
       qualityScore: round(weighted("qualityScore")),
       confidence: round(weighted("confidence")),
       missingRequiredCapabilities: stages.reduce((sum, stage) => sum
         + stage.capabilityCoverage.filter((item) => item.required && item.status === "missing").length, 0),
+      unconfirmedRequiredCapabilities: stages.reduce((sum, stage) => sum
+        + stage.capabilityCoverage.filter((item) => item.required && ["evidenced", "uncertain"].includes(item.status)).length, 0),
       reviewedCandidates: Object.values(overrides).reduce((total, decisions) => total + Object.keys(decisions || {}).length, 0),
       inventoryPaths: inventory.stats.paths,
       inventoryUniqueContent: inventory.stats.uniqueContent,

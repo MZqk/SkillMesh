@@ -1,0 +1,35 @@
+{
+  "name": "skillmesh",
+  "version": "0.7.0+codex.20260809102222",
+  "description": "Discover and use compact, workflow-aware local Agent Skill cards inside Codex.",
+  "author": {
+    "name": "mzzz",
+    "url": "https://github.com/MZqk"
+  },
+  "repository": "https://github.com/MZqk/SkillMesh",
+  "keywords": [
+    "skills",
+    "codex",
+    "mcp-apps",
+    "workflow"
+  ],
+  "interface": {
+    "displayName": "SkillMesh",
+    "shortDescription": "Pick workflow-relevant local Skills in Codex.",
+    "longDescription": "Scan local Agent Skills, show only current-stage, favorite, and recent Codex-compatible cards, then send a structured Skill handoff into the current task.",
+    "developerName": "mzzz",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Local Skill discovery",
+      "MCP Apps UI",
+      "Shared quick-use preferences"
+    ],
+    "defaultPrompt": [
+      "\u6253\u5f00 SkillMesh\uff0c\u9009\u62e9\u5f53\u524d\u9636\u6bb5\u9002\u7528\u7684 Skill\u3002",
+      "\u5728 SkillMesh \u4e2d\u67e5\u770b\u6211\u7684\u6536\u85cf\u548c\u6700\u8fd1\u4f7f\u7528\u3002",
+      "\u7528 SkillMesh \u9009\u62e9\u4e00\u4e2a Skill \u5e76\u53d1\u9001\u5230\u5f53\u524d Codex\u3002"
+    ],
+    "brandColor": "#176B53"
+  },
+  "mcpServers": "./.mcp.json"
+}

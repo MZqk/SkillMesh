@@ -9,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 import { loadWorkflowTemplate } from "../lib/matcher.mjs";
+import { QUICK_SKILL_WIDGET_URI } from "../mcp-server.mjs";
 import { WorkflowStore } from "../lib/workflow-store.mjs";
 
 const SERVER_PATH = path.resolve(import.meta.dirname, "../mcp-server.mjs");
@@ -81,6 +82,9 @@ test("auto-starts the Web child with real stdio MCP tools without exposing human
   const listed = await client.listTools();
   const names = listed.tools.map((tool) => tool.name);
   assert.ok(names.includes("search_skills"));
+  assert.ok(names.includes("get_quick_skill_deck"));
+  assert.ok(names.includes("open_skillmesh_widget"));
+  assert.ok(names.includes("update_quick_skill_state"));
   assert.ok(names.includes("create_workflow_draft"));
   assert.ok(names.includes("create_requirement_workflow_draft"));
   assert.ok(names.includes("find_external_skills"));
@@ -111,6 +115,64 @@ test("auto-starts the Web child with real stdio MCP tools without exposing human
   assert.equal(names.includes("confirm_playbook"), false);
   assert.equal(names.includes("update_playbook_progress"), false);
   assert.equal(names.includes("verify_playbook"), false);
+
+  const widgetTool = listed.tools.find((tool) => tool.name === "open_skillmesh_widget");
+  assert.equal(widgetTool._meta.ui.resourceUri, QUICK_SKILL_WIDGET_URI);
+  assert.equal(widgetTool._meta["openai/outputTemplate"], QUICK_SKILL_WIDGET_URI);
+  const resources = await client.listResources();
+  const widgetResource = resources.resources.find((resource) => resource.uri === QUICK_SKILL_WIDGET_URI);
+  assert.equal(widgetResource.mimeType, "text/html;profile=mcp-app");
+  const widget = await client.readResource({ uri: QUICK_SKILL_WIDGET_URI });
+  assert.equal(widget.contents[0].mimeType, "text/html;profile=mcp-app");
+  assert.match(widget.contents[0].text, /SkillMesh 快速使用/);
+  assert.equal(widget.contents[0]._meta.ui.csp.connectDomains.length, 0);
+  assert.equal(widget.contents[0]._meta.ui.csp.resourceDomains.length, 0);
+
+  const quickDeckResult = await client.callTool({ name: "get_quick_skill_deck", arguments: {} });
+  assert.match(quickDeckResult.content[0].text, /当前 Codex/);
+  assert.ok(quickDeckResult.structuredContent.sections.totalVisible <= 14);
+  const openedWidget = await client.callTool({ name: "open_skillmesh_widget", arguments: {} });
+  assert.equal(openedWidget.structuredContent.preferenceRevision, quickDeckResult.structuredContent.preferenceRevision);
+  const favoriteState = output(await client.callTool({
+    name: "update_quick_skill_state",
+    arguments: {
+      expectedRevision: quickDeckResult.structuredContent.preferenceRevision,
+      operation: { type: "set-favorite", contentHash: "fixture-hash", favorite: true },
+    },
+  }));
+  assert.equal(favoriteState.favorites[0], "fixture-hash");
+  const recentState = output(await client.callTool({
+    name: "update_quick_skill_state",
+    arguments: {
+      expectedRevision: favoriteState.revision,
+      operation: { type: "record-use", contentHash: "fixture-hash" },
+    },
+  }));
+  assert.equal(recentState.recent[0].contentHash, "fixture-hash");
+  const quickStateConflict = await client.callTool({
+    name: "update_quick_skill_state",
+    arguments: {
+      expectedRevision: favoriteState.revision,
+      operation: { type: "set-favorite", contentHash: "fixture-hash", favorite: false },
+    },
+  });
+  assert.equal(quickStateConflict.isError, true);
+  assert.match(quickStateConflict.content[0].text, /quick-skill-state-conflict/);
+  const webQuickState = await (await fetch(`${autoStartedUrl}/api/quick-skill-state`)).json();
+  assert.equal(webQuickState.revision, recentState.revision);
+  assert.equal(webQuickState.favorites.includes("fixture-hash"), true);
+  const webFavoriteResponse = await fetch(`${autoStartedUrl}/api/quick-skill-state`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      expectedRevision: webQuickState.revision,
+      operation: { type: "set-favorite", contentHash: "fixture-hash", favorite: false },
+    }),
+  });
+  assert.equal(webFavoriteResponse.status, 200);
+  const refreshedDeck = await client.callTool({ name: "get_quick_skill_deck", arguments: {} });
+  assert.equal(refreshedDeck.structuredContent.state.favorites.includes("fixture-hash"), false);
+  assert.equal(refreshedDeck.structuredContent.state.recent[0].contentHash, "fixture-hash");
 
   const prompts = await client.listPrompts();
   assert.ok(prompts.prompts.some((prompt) => prompt.name === "map_requirement_to_workflow"));
@@ -202,6 +264,7 @@ test("auto-starts the Web child with real stdio MCP tools without exposing human
   }));
   assert.equal(recorded.revision, 3);
   assert.equal(recorded.externalCandidates[0].packageId, "example/skills@requirements");
+  assert.equal(recorded.externalCandidates[0].status, "suggested");
 
   const proposedInstall = output(await client.callTool({
     name: "propose_skill_installation_plan",
@@ -212,9 +275,9 @@ test("auto-starts the Web child with real stdio MCP tools without exposing human
     },
   }));
   assert.equal(proposedInstall.executionAllowed, false);
-  assert.equal(proposedInstall.plan.items[0].type, "external-install");
-  assert.equal("canonicalPath" in proposedInstall.plan.items[0], false);
-  assert.equal("command" in proposedInstall.plan.items[0], false);
+  assert.equal(proposedInstall.plan.items.length, 0);
+  assert.ok(proposedInstall.plan.coverage.uncovered.length > 0);
+  assert.equal("sharedRoot" in proposedInstall.plan, false);
 
   const androidDraft = output(await client.callTool({
     name: "create_requirement_workflow_draft",
@@ -225,7 +288,7 @@ test("auto-starts the Web child with real stdio MCP tools without exposing human
   }));
   assert.equal(androidDraft.stages[0].id, "frame-android-requirement");
   assert.equal(androidDraft.projectBrief.status, "draft");
-  assert.equal(androidDraft.projectBrief.completeness.complete, false);
+  assert.equal(androidDraft.projectBrief.completeness.complete, true);
 
   const completedBrief = output(await client.callTool({
     name: "update_project_brief_draft",
@@ -290,7 +353,7 @@ test("auto-starts the Web child with real stdio MCP tools without exposing human
     name: "export_playbook",
     arguments: { workflowId: androidDraft.id, format: "markdown" },
   }));
-  assert.match(handbook.markdown, /从 0 到 1 开发手册/);
+  assert.match(handbook.markdown, /从 0 到 1 执行方案/);
   assert.match(handbook.markdown, new RegExp(confirmedPlaybook.contentHash));
   const startedProgressResponse = await fetch(`${autoStartedUrl}/api/workflows/${androidDraft.id}/playbook/progress/start`, {
     method: "POST",

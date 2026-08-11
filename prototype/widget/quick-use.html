@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SkillMesh 快速使用</title>
+  <style>/*__SKILLMESH_CSS__*/</style>
+</head>
+<body>
+  <main class="shell" aria-labelledby="widget-title">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">SKILLMESH · 当前 Codex</p>
+        <h1 id="widget-title">快速使用 Skill</h1>
+        <p id="context-summary" class="summary">正在读取当前阶段与本机 Skill…</p>
+      </div>
+      <span id="card-count" class="count" aria-live="polite">—</span>
+    </header>
+
+    <section id="context-controls" class="context-controls" aria-label="工作流上下文">
+      <label>工作流<select id="workflow-select"></select></label>
+      <label>阶段<select id="stage-select"></select></label>
+    </section>
+
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <div id="deck" class="deck"></div>
+
+    <section id="composer" class="composer" hidden aria-labelledby="composer-title">
+      <div class="composer-heading">
+        <div>
+          <p id="composer-source" class="eyebrow"></p>
+          <h2 id="composer-title"></h2>
+          <p id="composer-description"></p>
+        </div>
+        <button id="close-composer" class="quiet" type="button">返回卡片</button>
+      </div>
+      <form id="use-form" novalidate>
+        <label>任务<textarea id="task" rows="4" required placeholder="描述要由当前 Codex 完成的具体任务"></textarea></label>
+        <label>目标 Agent<input value="当前 Codex" readonly aria-readonly="true"></label>
+        <label>预期产物<textarea id="outputs" rows="4" required placeholder="每行一项，例如：实现代码&#10;验证结果"></textarea></label>
+        <p id="form-error" class="form-error" role="alert"></p>
+        <div class="form-actions">
+          <button id="send" class="primary" type="submit">发送到当前 Codex</button>
+          <span id="send-note">成功追加到当前任务后，才会记录最近使用。</span>
+        </div>
+      </form>
+    </section>
+  </main>
+  <script>/*__SKILLMESH_JS__*/</script>
+</body>
+</html>

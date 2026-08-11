@@ -143,3 +143,45 @@ test("detects, previews, and explicitly applies a template fingerprint migration
   assert.equal((await store.getPlaybookProgress(workflow.id)).staleSessions.length, 1);
   assert.equal((await store.getPlaybookVersion(workflow.id, 1)).snapshot.contentHash, confirmed.contentHash);
 });
+
+test("previews from an editable Brief and locks one execution baseline in a single action", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "capability-atlas-baseline-"));
+  context.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const store = new WorkflowStore({ filePath: path.join(directory, "workspace.json") });
+  const service = new CatalogService({ store, homeDirectory: directory, projectRoot: directory });
+  service.resolvedRoots = () => [];
+  const agent = { type: "agent", name: "fixture-agent", channel: "mcp" };
+  const human = { type: "human", name: "fixture-user", channel: "web" };
+
+  const workflow = await service.createReferenceDraft({
+    goal: "开发一个轻量 Web 任务面板",
+    requirement: { targetPlatforms: ["Web"], riskLevel: "low" },
+  }, agent);
+  assert.equal(workflow.projectBrief.status, "draft");
+  assert.equal(workflow.projectBrief.completeness.complete, true);
+
+  const playbook = await service.generatePlaybookDraft(workflow.id, { depth: "quick" }, agent);
+  assert.equal(playbook.status, "draft");
+  assert.equal(playbook.planningDepth, "quick");
+  assert.equal(playbook.stages.length, 3);
+  assert.equal(playbook.source.projectBriefVersion, 0);
+  assert.equal(playbook.source.projectBriefStatus, "draft");
+  assert.equal(playbook.source.projectBriefContentHash.length, 64);
+
+  const locked = await service.lockExecutionBaseline(workflow.id, {
+    expectedWorkflowRevision: workflow.revision,
+    expectedBriefRevision: workflow.projectBrief.revision,
+    expectedPlaybookRevision: playbook.revision,
+    reviewedContentHash: playbook.contentHash,
+  }, human);
+  assert.equal(locked.workflow.status, "confirmed");
+  assert.equal(locked.projectBrief.status, "frozen");
+  assert.equal(locked.playbook.status, "confirmed");
+  assert.equal(locked.playbook.planningDepth, "quick");
+  assert.equal(locked.playbook.stages.length, 3);
+  assert.deepEqual(locked.playbook.stages, playbook.stages);
+  assert.deepEqual(locked.playbook.skillBindingAssessment, playbook.skillBindingAssessment);
+  assert.equal(locked.playbook.source.projectBriefVersion, 1);
+  assert.equal(locked.progress.workflowId, workflow.id);
+  assert.equal(locked.progress.revision, 1);
+});

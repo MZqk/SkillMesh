@@ -46,6 +46,11 @@ test("maps evidence to a human-curated lifecycle and exposes assumptions", async
   assert.ok(launch.capabilityCoverage.every((item) => item.status === "missing"));
   assert.equal(design.candidates[0].id, "abc");
   assert.ok(design.candidates[0].evidence.some((item) => item.strength === "strong"));
+  assert.equal(design.coverage.confirmed, 0);
+  assert.equal(design.coverage.confirmedRatio, 0);
+  assert.ok(plan.summary.evidencedCoverageRatio > plan.summary.confirmedCoverageRatio);
+  assert.equal(plan.summary.confirmedCoverageRatio, 0);
+  assert.ok(plan.summary.unconfirmedRequiredCapabilities > 0);
   assert.match(plan.assumptions.join(" "), /不把通用模型/);
 });
 
@@ -90,6 +95,7 @@ test("complete means all strong capabilities were explicitly confirmed", async (
 
   assert.equal(stage.status, "complete");
   assert.deepEqual(stage.review, { confirmedCapabilities: 2, totalCapabilities: 2 });
+  assert.equal(stage.coverage.confirmedRatio, 1);
   assert.ok(stage.capabilityCoverage.every((item) => item.status === "confirmed"));
 });
 
@@ -253,5 +259,50 @@ test("treats the wildcard Agent declaration as compatible with a selected target
   const plan = await buildPlan({ goal: "Fixture", workflow, inventory: inventory([universal]) });
 
   assert.equal(plan.stages[0].candidates[0].name, "Universal fixture");
+  assert.equal(plan.summary.disabledOrIncompatible, 0);
+});
+
+test("keeps a Skill eligible for every Agent where identical content is installed", async () => {
+  const workflow = {
+    id: "multi-agent-copy",
+    name: "Multi-agent copy",
+    version: "1",
+    referenceType: "agent-draft",
+    description: "Fixture",
+    requirement: { targetAgents: ["codex"] },
+    stages: [{
+      id: "build",
+      order: 1,
+      phase: "build",
+      title: "Build",
+      capabilities: [{ id: "fixture", label: "Fixture capability", terms: ["fixture capability"] }],
+    }],
+  };
+  const shared = {
+    contentHash: "same-agent-content",
+    name: "Shared fixture",
+    description: "Fixture capability for a selected Agent.",
+    searchText: "Fixture capability for a selected Agent.",
+  };
+  const claudeCopy = skill({
+    ...shared,
+    id: "claude-copy",
+    provider: "claude",
+    path: "/fixture/.claude/skills/shared/SKILL.md",
+    supportedAgents: ["claude"],
+  });
+  const codexCopy = skill({
+    ...shared,
+    id: "codex-copy",
+    provider: "codex",
+    path: "/fixture/.codex/skills/shared/SKILL.md",
+    supportedAgents: ["codex"],
+  });
+
+  const plan = await buildPlan({ goal: "Fixture", workflow, inventory: inventory([claudeCopy, codexCopy]) });
+
+  assert.equal(plan.stages[0].candidates[0].name, "Shared fixture");
+  assert.deepEqual(plan.stages[0].candidates[0].providers, ["claude", "codex"]);
+  assert.deepEqual(plan.stages[0].candidates[0].supportedAgents, ["claude", "codex"]);
   assert.equal(plan.summary.disabledOrIncompatible, 0);
 });

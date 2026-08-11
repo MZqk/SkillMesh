@@ -25,6 +25,9 @@ function workflow() {
       skillName: "external-two",
       sourceUrl: "https://skills.sh/example/skills/two",
       status: "accepted",
+      reviewedContentHash: "a".repeat(64),
+      reviewedAt: "2026-08-09T00:00:00.000Z",
+      reviewedSeverity: "none",
     }],
   };
 }
@@ -74,6 +77,25 @@ test("admits only confirmed local matches and accepted gap candidates into the m
   assert.equal(plan.coverage.covered, 2);
   assert.equal(plan.coverage.uncovered.length, 0);
   assert.equal(plan.items.some((item) => item.name === "unreviewed-local"), false);
+  assert.equal(plan.items.find((item) => item.name === "external-two").reviewedContentHash, "a".repeat(64));
+});
+
+test("keeps an accepted external candidate ineligible until an exact document fingerprint was reviewed", () => {
+  const source = workflow();
+  delete source.externalCandidates[0].reviewedContentHash;
+  const plan = buildInstallationPlan({
+    workflow: source,
+    assessment: assessment([]),
+    targetAgentIds: ["codex"],
+    actor,
+    homeDirectory: "/fixture/home",
+    basedOnRevision: 5,
+  });
+
+  assert.equal(plan.items[0].eligible, false);
+  assert.equal(plan.items[0].selected, false);
+  assert.ok(plan.items[0].riskFlags.includes("reviewed-content-missing"));
+  assert.equal(plan.coverage.covered, 0);
 });
 
 test("keeps incompatible local Skills visible but excluded until a per-item override", () => {

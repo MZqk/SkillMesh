@@ -14,6 +14,16 @@ test("includes named Agent ecosystems with evidence-level metadata", () => {
     "codex",
     "claude",
     "cursor",
+    "gemini-cli",
+    "antigravity",
+    "antigravity-cli",
+    "kiro",
+    "trae",
+    "opencode",
+    "windsurf",
+    "cline",
+    "continue",
+    "github-copilot",
     "workbuddy",
     "qoderwork-global",
     "qoderwork-cn",
@@ -25,6 +35,14 @@ test("includes named Agent ecosystems with evidence-level metadata", () => {
   assert.equal(
     roots.find((root) => root.provider === "workbuddy").stability,
     "observed",
+  );
+  assert.equal(
+    roots.find((root) => root.label === "Gemini CLI 插件 Skill").sourceKind,
+    "derived",
+  );
+  assert.deepEqual(
+    roots.find((root) => root.label === "项目 Kiro Skill").supportedAgents,
+    ["kiro"],
   );
 });
 

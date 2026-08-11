@@ -8,7 +8,7 @@ import {
   seedProjectBrief,
 } from "../lib/project-brief-model.mjs";
 
-test("seeds a structured Project Brief and asks the next missing interview question", () => {
+test("seeds a complete editable Project Brief with explicit inferred defaults", () => {
   const seed = seedProjectBrief({
     goal: "开发一个团队任务 Web 应用",
     scopeDescription: "减少小团队遗漏交接任务的问题。",
@@ -26,10 +26,11 @@ test("seeds a structured Project Brief and asks the next missing interview quest
   const completeness = projectBriefCompleteness(brief);
 
   assert.equal(brief.deploymentTarget, "deployable-mvp");
-  assert.equal(completeness.complete, false);
-  assert.deepEqual(completeness.missingFields, ["constraints"]);
-  assert.equal(completeness.nextQuestion.field, "constraints");
-  assert.throws(() => assertProjectBriefFreezable(brief), /project-brief-not-freezable:constraints/);
+  assert.equal(completeness.complete, true);
+  assert.deepEqual(completeness.missingFields, []);
+  assert.deepEqual(brief.constraints, ["无额外约束"]);
+  assert.equal(completeness.nextQuestion, null);
+  assert.doesNotThrow(() => assertProjectBriefFreezable(brief));
 });
 
 test("accepts a complete Brief as a human-freezable generation contract", () => {

@@ -14,7 +14,7 @@ const CAPABILITY_STATUS_LABELS = {
 
 export function planToMarkdown(plan) {
   const lines = [
-    `# 能力地图：${plan.goal}`,
+    `# 技能地图：${plan.goal}`,
     "",
     `> 参考流程：${plan.template.name} v${plan.template.version}；生成时间：${plan.generatedAt}`,
     "",
@@ -29,9 +29,11 @@ export function planToMarkdown(plan) {
     `- 不确定：${plan.summary.counts.uncertain}`,
     `- 缺失：${plan.summary.counts.missing}`,
     `- 综合需求匹配：${Math.round((plan.summary.matchScore || 0) * 100)}%`,
-    `- 必需能力覆盖：${Math.round((plan.summary.coverageRatio || 0) * 100)}%`,
+    `- 文本证据覆盖：${Math.round((plan.summary.evidencedCoverageRatio ?? plan.summary.coverageRatio ?? 0) * 100)}%`,
+    `- 人工确认覆盖：${Math.round((plan.summary.confirmedCoverageRatio || 0) * 100)}%`,
     `- 运行就绪证据：${Math.round((plan.summary.readinessScore || 0) * 100)}%`,
     `- 缺失的必需能力：${plan.summary.missingRequiredCapabilities || 0}`,
+    `- 有证据但待确认的必需能力：${plan.summary.unconfirmedRequiredCapabilities || 0}`,
     "",
     "## 工作流与能力匹配",
     "",
@@ -44,7 +46,8 @@ export function planToMarkdown(plan) {
       stage.description,
       "",
       `- 判断：${stage.reason}`,
-      `- 覆盖：${stage.coverage.matched}/${stage.coverage.total}`,
+      `- 人工确认：${stage.coverage.confirmed || 0}/${stage.coverage.total}`,
+      `- 文本证据：${stage.coverage.matched}/${stage.coverage.total}`,
       `- 需求匹配：${Math.round((stage.matchScore || 0) * 100)}%`,
       `- 运行就绪：${Math.round((stage.readinessScore || 0) * 100)}%`,
       `- 元数据与来源质量：${Math.round((stage.qualityScore || 0) * 100)}%`,

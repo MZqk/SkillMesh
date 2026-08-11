@@ -7,4 +7,4 @@ license: MIT
 
 # Fixture capability
 
-This file is inert test data. Capability Atlas must index it without executing it.
+This file is inert test data. SkillMesh must index it without executing it.

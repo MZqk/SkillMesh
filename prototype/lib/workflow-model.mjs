@@ -254,6 +254,14 @@ function normalizeExternalCandidates(value) {
       chain: item.chain === true,
       chainPosition: Math.max(0, Number(item.chainPosition) || 0),
       chainLength: Math.max(0, Number(item.chainLength) || 0),
+      reviewedContentHash: text(item.reviewedContentHash, 200).toLowerCase(),
+      reviewedAt: text(item.reviewedAt, 100),
+      reviewedRepository: text(item.reviewedRepository, 500),
+      reviewedBranch: text(item.reviewedBranch, 200),
+      reviewedPath: text(item.reviewedPath, 1_000),
+      reviewedSeverity: ["none", "low", "medium", "high", "critical"].includes(item.reviewedSeverity)
+        ? item.reviewedSeverity
+        : "none",
       securityNotes: text(item.securityNotes, 1_000),
       rationale: text(item.rationale, 2_000),
       status: allowedStatuses.has(item.status) ? item.status : "suggested",
@@ -345,6 +353,14 @@ function normalizeInstallationItem(value) {
     sourcePath: text(value.sourcePath, 1_000),
     contentHash: text(value.contentHash, 200),
     installedContentHash: text(value.installedContentHash, 200),
+    reviewedContentHash: text(value.reviewedContentHash, 200).toLowerCase(),
+    reviewedAt: text(value.reviewedAt, 100),
+    reviewedRepository: text(value.reviewedRepository, 500),
+    reviewedBranch: text(value.reviewedBranch, 200),
+    reviewedPath: text(value.reviewedPath, 1_000),
+    reviewedSeverity: ["none", "low", "medium", "high", "critical"].includes(value.reviewedSeverity)
+      ? value.reviewedSeverity
+      : "none",
     packageId: text(value.packageId, 500),
     sourceUrl: text(value.sourceUrl, 1_000),
     version: text(value.version, 100),
@@ -451,7 +467,10 @@ export function normalizeInstallationPlans(value) {
           targetAgent: text(item.targetAgent, 100),
           matchScore: Math.max(0, Math.min(1, Number(item.matchScore) || 0)),
           coverageRatio: Math.max(0, Math.min(1, Number(item.coverageRatio) || 0)),
+          evidencedCoverageRatio: Math.max(0, Math.min(1, Number(item.evidencedCoverageRatio ?? item.coverageRatio) || 0)),
+          confirmedCoverageRatio: Math.max(0, Math.min(1, Number(item.confirmedCoverageRatio) || 0)),
           missingRequiredCapabilities: Math.max(0, Number(item.missingRequiredCapabilities) || 0),
+          unconfirmedRequiredCapabilities: Math.max(0, Number(item.unconfirmedRequiredCapabilities) || 0),
           assessedAt: text(item.assessedAt, 100),
         }];
       }) : [],

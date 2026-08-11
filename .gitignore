@@ -37,6 +37,10 @@ coverage/
 # Build and test output
 dist/
 build/
+!prototype/dist/
+!prototype/dist/quick-use-widget.html
+!plugins/skillmesh/runtime/dist/
+!plugins/skillmesh/runtime/dist/quick-use-widget.html
 prototype/output/*
 !prototype/output/pdf/
 prototype/output/pdf/*

@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { createServer } from "../server.mjs";
+import { CatalogService } from "../lib/catalog-service.mjs";
 import { WorkflowStore } from "../lib/workflow-store.mjs";
 
 test("serves a local Web-approved installation health contract", async (context) => {
@@ -28,8 +29,62 @@ test("serves a local Web-approved installation health contract", async (context)
     installationExecution: "web-only",
     workflowPersistence: true,
     mcpTransport: "stdio",
-    version: "0.6.0",
+    version: "0.7.0",
   });
+});
+
+test("shares QuickSkillState across Web requests with migration and optimistic conflicts", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "skillmesh-quick-api-"));
+  context.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const store = new WorkflowStore({ filePath: path.join(directory, "workspace.json") });
+  const server = createServer({ store });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  const initial = await (await fetch(`${baseUrl}/api/quick-skill-state`)).json();
+  assert.equal(initial.revision, 0);
+  const migration = await (await fetch(`${baseUrl}/api/quick-skill-state/migrate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ preferences: { favorites: ["legacy"] } }),
+  })).json();
+  assert.equal(migration.migrated, true);
+  assert.equal(migration.state.legacyWebMigrationCompleted, true);
+
+  const updatedResponse = await fetch(`${baseUrl}/api/quick-skill-state`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      expectedRevision: migration.state.revision,
+      operation: { type: "set-favorite", contentHash: "legacy", favorite: false },
+    }),
+  });
+  const updated = await updatedResponse.json();
+  assert.equal(updatedResponse.status, 200);
+  assert.deepEqual(updated.favorites, []);
+
+  const conflictResponse = await fetch(`${baseUrl}/api/quick-skill-state`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      expectedRevision: migration.state.revision,
+      operation: { type: "record-use", contentHash: "legacy" },
+    }),
+  });
+  assert.equal(conflictResponse.status, 409);
+  assert.equal((await conflictResponse.json()).currentRevision, updated.revision);
+
+  const replay = await (await fetch(`${baseUrl}/api/quick-skill-state/migrate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ preferences: { favorites: ["legacy"] } }),
+  })).json();
+  assert.equal(replay.migrated, false);
+  assert.deepEqual(replay.state.favorites, []);
 });
 
 test("rejects dangerously broad custom scan roots", async (context) => {
@@ -86,6 +141,50 @@ test("scans an explicit custom root without exposing Skill body text", async (co
   assert.equal(fixture.rootStability, "user-configured");
   assert.equal("searchText" in fixture, false);
   assert.doesNotMatch(raw, /PRIVATE_BODY_SENTINEL/);
+});
+
+test("serves one bounded local Skill document only after an explicit content request", async (context) => {
+  const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "capability-atlas-local-document-"));
+  context.after(() => fs.rm(rootPath, { recursive: true, force: true }));
+  const skillDirectory = path.join(rootPath, "document-fixture");
+  await fs.mkdir(skillDirectory);
+  await fs.writeFile(path.join(skillDirectory, "SKILL.md"), [
+    "---",
+    "name: document-fixture",
+    "description: Explicit local document review fixture.",
+    "---",
+    "LOCAL_DOCUMENT_SENTINEL",
+    "",
+  ].join("\n"));
+  const store = new WorkflowStore({ filePath: path.join(rootPath, "workspace.json") });
+  const service = new CatalogService({ store });
+  service.resolvedRoots = () => [{
+    path: rootPath,
+    provider: "fixture",
+    scope: "custom",
+    label: "Fixture",
+    stability: "test",
+    sourceKind: "direct",
+  }];
+  const server = createServer({ store, service });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  const inventoryRaw = await (await fetch(`${baseUrl}/api/scan?refresh=1`)).text();
+  assert.doesNotMatch(inventoryRaw, /LOCAL_DOCUMENT_SENTINEL/);
+  const inventory = JSON.parse(inventoryRaw);
+  const fixture = inventory.skills.find((skill) => skill.name === "document-fixture");
+  const response = await fetch(`${baseUrl}/api/skills/${fixture.contentHash}/content?maxChars=1000`);
+  const document = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(document.untrustedContent, true);
+  assert.match(document.content, /LOCAL_DOCUMENT_SENTINEL/);
+  assert.doesNotMatch(JSON.stringify(document), new RegExp(rootPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("persists, confirms, exports, and conflict-checks shared workflows", async (context) => {

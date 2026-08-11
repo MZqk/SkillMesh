@@ -127,6 +127,7 @@ test("syncs a human-confirmed local Skill through the shared root and selected A
 
 test("runs external installation only after an item-specific risk acknowledgement", async (context) => {
   const environment = await fixtureEnvironment(context);
+  const externalContents = "---\nname: fixture-external\ndescription: safe external fixture\n---\nSafe.\n";
   const externalCandidate = {
     id: "candidate-1",
     stageId: "delivery",
@@ -136,6 +137,9 @@ test("runs external installation only after an item-specific risk acknowledgemen
     sourceUrl: "https://skills.sh/example/skills/fixture-external",
     rationale: "accepted fixture",
     status: "accepted",
+    reviewedContentHash: crypto.createHash("sha256").update(externalContents).digest("hex"),
+    reviewedAt: "2026-08-09T00:00:00.000Z",
+    reviewedSeverity: "none",
   };
   const store = new WorkflowStore({ filePath: path.join(environment.dataDirectory, "workspace.json") });
   const workflow = await store.createWorkflow(workflowInput([externalCandidate]), human);
@@ -152,7 +156,7 @@ test("runs external installation only after an item-specific risk acknowledgemen
     commands.push([command, ...args]);
     const directory = path.join(homeDirectory, ".agents", "skills", "fixture-external");
     await fs.mkdir(directory, { recursive: true });
-    await fs.writeFile(path.join(directory, "SKILL.md"), "---\nname: fixture-external\ndescription: safe external fixture\n---\nSafe.\n");
+    await fs.writeFile(path.join(directory, "SKILL.md"), externalContents);
     return { code: 0, stdout: "installed", stderr: "" };
   };
   const service = fakeService(assessment, {
@@ -194,7 +198,80 @@ test("runs external installation only after an item-specific risk acknowledgemen
   const finished = await store.getWorkflow(workflow.id);
   assert.equal(finished.installationPlans[0].status, "completed");
   assert.equal(finished.installationPlans[0].items[0].status, "installed");
+  assert.equal(finished.installationPlans[0].items[0].installedContentHash, externalCandidate.reviewedContentHash);
   assert.equal(finished.externalCandidates[0].status, "installed");
+});
+
+test("quarantines an external Skill when installed content differs from the reviewed fingerprint", async (context) => {
+  const environment = await fixtureEnvironment(context);
+  const reviewedContents = "---\nname: drifted-external\ndescription: reviewed version\n---\nReviewed.\n";
+  const installedContents = "---\nname: drifted-external\ndescription: changed after review\n---\nChanged.\n";
+  const externalCandidate = {
+    id: "candidate-drift",
+    stageId: "delivery",
+    capabilityId: "capability",
+    packageId: "example/skills@drifted-external",
+    skillName: "drifted-external",
+    sourceUrl: "https://skills.sh/example/skills/drifted-external",
+    rationale: "fingerprint mismatch fixture",
+    status: "accepted",
+    reviewedContentHash: crypto.createHash("sha256").update(reviewedContents).digest("hex"),
+    reviewedAt: "2026-08-09T00:00:00.000Z",
+    reviewedSeverity: "none",
+  };
+  const store = new WorkflowStore({ filePath: path.join(environment.dataDirectory, "workspace.json") });
+  const workflow = await store.createWorkflow(workflowInput([externalCandidate]), human);
+  const assessment = {
+    summary: { matchScore: 0, coverageRatio: 0, missingRequiredCapabilities: 1 },
+    stages: [{
+      id: "delivery",
+      capabilityCoverage: [{ id: "capability", label: "测试能力", required: true, status: "missing" }],
+      candidates: [],
+    }],
+  };
+  const runner = async ({ homeDirectory }) => {
+    const directory = path.join(homeDirectory, ".agents", "skills", "drifted-external");
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, "SKILL.md"), installedContents);
+    return { code: 0, stdout: "installed", stderr: "" };
+  };
+  const manager = new InstallationManager({
+    store,
+    service: fakeService(assessment, {
+      homeDirectory: environment.homeDirectory,
+      projectRoot: path.join(environment.root, "project"),
+    }),
+    runner,
+    ...environment,
+  });
+  const created = await manager.createPlan({
+    workflowId: workflow.id,
+    expectedRevision: workflow.revision,
+    targetAgents: ["codex"],
+  }, human);
+  const item = created.plan.items[0];
+  assert.equal(item.eligible, true);
+  const configured = await manager.configurePlan({
+    workflowId: workflow.id,
+    planId: created.plan.id,
+    expectedRevision: created.workflow.revision,
+    selectedItemIds: [item.id],
+    itemOptions: { [item.id]: { acknowledgements: ["pre-scan-visible"] } },
+  }, human);
+
+  await manager.executePlan({
+    workflowId: workflow.id,
+    planId: created.plan.id,
+    expectedRevision: configured.workflow.revision,
+  }, human);
+  await manager.waitForIdle();
+
+  const finished = await store.getWorkflow(workflow.id);
+  const result = finished.installationPlans[0].items[0];
+  assert.equal(result.status, "quarantined");
+  assert.ok(result.securityScan.findings.some((finding) => finding.id === "reviewed-content-hash-mismatch"));
+  assert.equal(finished.externalCandidates[0].status, "accepted");
+  assert.match(result.error, /移入隔离区/);
 });
 
 test("isolates a newly managed local link when the post-install scan finds high risk", async (context) => {
@@ -258,6 +335,9 @@ test("cancels a running external child operation and leaves no repair lock when 
     sourceUrl: "https://skills.sh/example/skills/cancel-fixture",
     rationale: "cancel fixture",
     status: "accepted",
+    reviewedContentHash: "a".repeat(64),
+    reviewedAt: "2026-08-09T00:00:00.000Z",
+    reviewedSeverity: "none",
   };
   const store = new WorkflowStore({ filePath: path.join(environment.dataDirectory, "workspace.json") });
   const workflow = await store.createWorkflow(workflowInput([externalCandidate]), human);

@@ -8,7 +8,7 @@ import { startServer } from "./server.mjs";
 const [command = "help", ...args] = process.argv.slice(2);
 
 function help() {
-  console.log(`Capability Atlas 0.6
+  console.log(`SkillMesh 0.7
 
 Usage:
   node cli.mjs scan [--full]

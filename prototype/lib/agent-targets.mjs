@@ -25,6 +25,48 @@ const TARGETS = [
     skillsCliAgent: "cursor",
   },
   {
+    id: "gemini-cli",
+    label: "Gemini CLI",
+    directory: [".gemini", "skills"],
+    aliases: ["gemini", "gemini-cli"],
+    skillsCliAgent: "gemini-cli",
+  },
+  {
+    id: "antigravity",
+    label: "Antigravity",
+    directory: [".gemini", "antigravity", "skills"],
+    aliases: ["antigravity"],
+    skillsCliAgent: "antigravity",
+  },
+  {
+    id: "antigravity-cli",
+    label: "Antigravity CLI",
+    directory: [".gemini", "antigravity-cli", "skills"],
+    aliases: ["antigravity-cli"],
+    skillsCliAgent: "antigravity-cli",
+  },
+  {
+    id: "kiro",
+    label: "Kiro CLI",
+    directory: [".kiro", "skills"],
+    aliases: ["kiro", "kiro-cli"],
+    skillsCliAgent: "kiro-cli",
+  },
+  {
+    id: "trae",
+    label: "Trae",
+    directory: [".trae", "skills"],
+    aliases: ["trae"],
+    skillsCliAgent: "trae",
+  },
+  {
+    id: "opencode",
+    label: "OpenCode",
+    directory: [".config", "opencode", "skills"],
+    aliases: ["opencode"],
+    skillsCliAgent: "opencode",
+  },
+  {
     id: "workbuddy",
     label: "WorkBuddy",
     directory: [".workbuddy", "skills"],
@@ -36,6 +78,13 @@ const TARGETS = [
     label: "QoderWork",
     directory: [".qoderwork", "skills"],
     aliases: ["qoderwork", "qoderwork-global"],
+    skillsCliAgent: null,
+  },
+  {
+    id: "qoderwork-cn",
+    label: "QoderWork CN",
+    directory: [".qoderworkcn", "skills"],
+    aliases: ["qoderwork-cn"],
     skillsCliAgent: null,
   },
   {
@@ -53,6 +102,8 @@ const TARGETS = [
     skillsCliAgent: null,
   },
 ];
+
+export const AGENT_TARGET_IDS = Object.freeze(TARGETS.map((target) => target.id));
 
 function configuredHomeDirectory() {
   return process.env.CAPABILITY_ATLAS_HOME_DIR

@@ -9,7 +9,7 @@ import { compilePlaybookDraft } from "../lib/playbook-compiler.mjs";
 import { legacyPlaybookContentHashV1 } from "../lib/playbook-model.mjs";
 import { WorkflowStore } from "../lib/workflow-store.mjs";
 
-async function seededStore(context) {
+async function seededStore(context, { depth = "full" } = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "capability-atlas-progress-"));
   context.after(() => fs.rm(directory, { recursive: true, force: true }));
   const store = new WorkflowStore({ filePath: path.join(directory, "workspace.json") });
@@ -38,7 +38,7 @@ async function seededStore(context) {
   const frozen = await store.freezeProjectBrief(workflow.id, { expectedRevision: brief.revision }, human);
   const draftPlaybook = await store.createPlaybook(
     workflow.id,
-    await compilePlaybookDraft({ workflow, projectBrief: frozen }),
+    await compilePlaybookDraft({ workflow, projectBrief: frozen, depth }),
     agent,
   );
   const playbook = await store.confirmPlaybook(workflow.id, {
@@ -47,6 +47,37 @@ async function seededStore(context) {
   }, human);
   return { store, workflow, playbook, agent, human, directory };
 }
+
+test("completes a condensed step and advances its quality gate in one write", async (context) => {
+  const { store, workflow, playbook, human } = await seededStore(context, { depth: "quick" });
+  let progress = await store.startPlaybookProgress(workflow.id, human);
+  const softStage = playbook.stages[0];
+  progress = await store.completePlaybookStepAndAdvance(workflow.id, {
+    expectedRevision: progress.revision,
+    stageId: softStage.id,
+    stepId: softStage.steps[0].id,
+  }, human);
+  assert.equal(progress.revision, 2);
+  assert.equal(progress.steps[0].status, "completed");
+  assert.equal(progress.steps[0].acceptanceResult, "passed");
+  assert.equal(progress.gates[0].status, "passed");
+
+  const hardStage = playbook.stages[1];
+  await assert.rejects(store.completePlaybookStepAndAdvance(workflow.id, {
+    expectedRevision: progress.revision,
+    stageId: hardStage.id,
+    stepId: hardStage.steps[0].id,
+  }, human), /playbook-step-completion-requires-evidence/);
+  progress = await store.completePlaybookStepAndAdvance(workflow.id, {
+    expectedRevision: progress.revision,
+    stageId: hardStage.id,
+    stepId: hardStage.steps[0].id,
+    notes: "端到端结果已经人工验收。",
+    evidence: [{ kind: "note", label: "完成证据", value: "端到端结果已经人工验收。" }],
+  }, human);
+  assert.equal(progress.revision, 3);
+  assert.equal(progress.gates.find((item) => item.stageId === hardStage.id).status, "passed");
+});
 
 test("persists hash-bound step evidence and enforces graded gates", async (context) => {
   const { store, workflow, playbook, agent, human } = await seededStore(context);

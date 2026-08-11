@@ -58,7 +58,8 @@ function kitFixture() {
       name: "external-one",
       packageId: "fixture/skills@external-one",
       sourceUrl: "https://github.com/fixture/skills",
-      version: "latest-at-execution",
+      version: "reviewed-sha256:bbbbbbbbbbbbbbbb",
+      reviewedContentHash: "b".repeat(64),
       targetPaths: { codex: "/private/sensitive/codex/external-one" },
       capabilityRefs: [{ stageId: "test", capabilityId: "review", label: "评审", required: true, strength: "external" }],
       selected: true,
@@ -85,6 +86,7 @@ test("builds a stable, path-free project Skill Kit with chain provenance", () =>
   assert.deepEqual(first.skills.map((skill) => skill.name), ["local-one", "external-one"]);
   assert.equal(first.skills[1].catalog.chainPosition, 2);
   assert.equal(first.skills[1].catalog.chainLength, 4);
+  assert.equal(first.skills[1].contentHash, "b".repeat(64));
   assert.doesNotMatch(serialized, /private\/sensitive|do-not-export|private-decision/u);
   assert.equal(first.boundaries.comparisonOnlyOnImport, true);
   assert.equal(first.boundaries.undeclaredLocalSkills, "leave-untouched");

@@ -54,7 +54,7 @@ test("honors disabled metadata and skips nested cross-agent distribution mirrors
   context.after(() => fs.rm(rootPath, { recursive: true, force: true }));
   await fs.mkdir(path.join(rootPath, "package", ".cursor", "skills", "copy"), { recursive: true });
   await fs.mkdir(path.join(rootPath, "package", "primary"), { recursive: true });
-  const document = "---\nname: registry-fixture\ndescription: Registry fixture.\ndisable: true\nagents: [codex]\nallowed-tools:\n  - Read\n---\nBody\n";
+  const document = "---\nname: registry-fixture\ndescription: Registry fixture.\ndisable: true\nagents: [codex]\nallowed-tools:\n  - Read\ntriggers: [review code]\ninvocation: /registry-fixture\n---\nBody\n";
   await fs.writeFile(path.join(rootPath, "package", "primary", "SKILL.md"), document);
   await fs.writeFile(path.join(rootPath, "package", ".cursor", "skills", "copy", "SKILL.md"), document);
 
@@ -75,4 +75,6 @@ test("honors disabled metadata and skips nested cross-agent distribution mirrors
   assert.equal(inventory.skills[0].enabled, false);
   assert.deepEqual(inventory.skills[0].supportedAgents, ["codex"]);
   assert.deepEqual(inventory.skills[0].allowedTools, ["Read"]);
+  assert.deepEqual(inventory.skills[0].triggers, ["review code"]);
+  assert.equal(inventory.skills[0].invocation, "/registry-fixture");
 });

@@ -13,34 +13,18 @@ import { normalizePlaybookInput, publicPlaybook } from "./playbook-model.mjs";
 import { renderPlaybookPdf } from "./playbook-pdf.mjs";
 import { renderPlaybookMarkdown } from "./playbook-renderer.mjs";
 import { bindSkillsToPlaybook } from "./playbook-skill-binder.mjs";
-import { seedProjectBrief } from "./project-brief-model.mjs";
+import { projectBriefContentHash, seedProjectBrief } from "./project-brief-model.mjs";
 import { customSkillRoots, defaultSkillRoots } from "./roots.mjs";
 import { publicInventory, scanSkills } from "./scanner.mjs";
+import { canonicalSkills, mergeSkillCopies, skillPreference } from "./skill-identity.mjs";
 import { decisionsForMatcher, workflowForMatcher } from "./workflow-model.mjs";
-import { WorkflowStore } from "./workflow-store.mjs";
+import { WorkflowConflictError, WorkflowStore } from "./workflow-store.mjs";
 
 const SCAN_MAX_BYTES = 512 * 1024;
 const CONTENT_MAX_CHARS = 128 * 1024;
 
 function normalizeSearch(value) {
   return String(value || "").normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function preference(skill) {
-  const scope = { project: 5, user: 4, custom: 3, "plugin-cache": 2, internal: 1 }[skill.scope] || 0;
-  return (skill.enabled === false ? -100 : 0)
-    + (skill.sourceKind === "direct" ? 20 : 0)
-    + scope
-    + (skill.metadataStatus === "complete" ? 1 : 0);
-}
-
-function canonicalSkills(skills) {
-  const byContent = new Map();
-  for (const skill of skills) {
-    const current = byContent.get(skill.contentHash);
-    if (!current || preference(skill) > preference(current)) byContent.set(skill.contentHash, skill);
-  }
-  return [...byContent.values()];
 }
 
 function skillWarnings(skill) {
@@ -67,6 +51,7 @@ function skillSummary(skill) {
     name: skill.name,
     description: skill.description || "未提供 description",
     provider: skill.provider,
+    providers: skill.providers || [skill.provider],
     scope: skill.scope,
     sourceKind: skill.sourceKind,
     rootStability: skill.rootStability,
@@ -81,6 +66,7 @@ function skillSummary(skill) {
     allowedTools: skill.allowedTools || [],
     triggers: skill.triggers || [],
     keywords: skill.keywords || [],
+    invocation: skill.invocation || "",
     packageId: skill.packageId || "",
     modifiedAt: skill.modifiedAt,
     bytes: skill.bytes,
@@ -208,8 +194,8 @@ export class CatalogService {
   async status() {
     const [inventory, persistence] = await Promise.all([this.inventory(), this.store.summary()]);
     return {
-      name: "Capability Atlas",
-      version: "0.6.0",
+      name: "SkillMesh",
+      version: "0.7.0",
       skillFilesystem: "human-approved-managed-writes",
       networkSearch: true,
       externalSearch: {
@@ -270,11 +256,11 @@ export class CatalogService {
     const inventory = await this.inventory();
     const candidates = inventory.skills.filter((skill) => skill.contentHash === id || skill.id === id);
     if (!candidates.length) throw new Error("skill-not-found");
-    candidates.sort((left, right) => preference(right) - preference(left));
-    const result = skillSummary(candidates[0]);
+    const merged = mergeSkillCopies(candidates);
+    const result = skillSummary(merged);
     result.copies = candidates.length;
     result.diagnostics = [...new Set(candidates.flatMap((skill) => skill.diagnostics || []))];
-    result.sourceUrl = candidates[0].sourceUrl;
+    result.sourceUrl = merged.sourceUrl;
     if (includePaths) result.paths = candidates.map((skill) => skill.path);
     return result;
   }
@@ -282,7 +268,7 @@ export class CatalogService {
   async getSkillContent(id, { maxChars = CONTENT_MAX_CHARS } = {}) {
     const inventory = await this.inventory();
     const candidates = inventory.skills.filter((skill) => skill.contentHash === id || skill.id === id)
-      .sort((left, right) => preference(right) - preference(left));
+      .sort((left, right) => skillPreference(right) - skillPreference(left));
     if (!candidates.length) throw new Error("skill-not-found");
     const skill = candidates[0];
     const stats = await fs.stat(skill.realPath);
@@ -348,12 +334,20 @@ export class CatalogService {
     }, actor);
   }
 
-  async compileBoundPlaybook(workflow, projectBrief) {
+  async compileBoundPlaybook(workflow, projectBrief, depth = "auto") {
     const [compiled, assessment] = await Promise.all([
-      compilePlaybookDraft({ workflow, projectBrief }),
+      compilePlaybookDraft({ workflow, projectBrief, depth }),
       this.assessWorkflow(workflow.id, { includePaths: false }),
     ]);
     return bindSkillsToPlaybook({ playbook: compiled, assessment });
+  }
+
+  async projectBriefForPlaybook(workflowId, playbook) {
+    if (playbook.source?.projectBriefSnapshot) return structuredClone(playbook.source.projectBriefSnapshot);
+    if (playbook.source?.projectBriefVersion > 0) {
+      return (await this.store.getProjectBriefVersion(workflowId, playbook.source.projectBriefVersion)).snapshot;
+    }
+    return this.store.getProjectBrief(workflowId);
   }
 
   async playbookTemplateStatus(workflowId) {
@@ -371,12 +365,9 @@ export class CatalogService {
       loadPlaybookTemplate(),
     ]);
     const state = templateMigrationState(playbook, template);
-    const projectBrief = (await this.store.getProjectBriefVersion(
-      workflowId,
-      playbook.source.projectBriefVersion,
-    )).snapshot;
+    const projectBrief = await this.projectBriefForPlaybook(workflowId, playbook);
     const [generated, progress, verification] = await Promise.all([
-      this.compileBoundPlaybook(workflow, projectBrief),
+      this.compileBoundPlaybook(workflow, projectBrief, playbook.planningDepth || "full"),
       this.store.getPlaybookProgress(workflowId),
       this.store.getPlaybookVerification(workflowId),
     ]);
@@ -438,12 +429,11 @@ export class CatalogService {
     }, actor);
   }
 
-  async generatePlaybookDraft(workflowId, { briefVersion, expectedRevision } = {}, actor) {
+  async generatePlaybookDraft(workflowId, { briefVersion, expectedRevision, depth } = {}, actor) {
     const workflow = await this.store.getWorkflow(workflowId);
     const projectBrief = briefVersion
       ? (await this.store.getProjectBriefVersion(workflowId, briefVersion)).snapshot
       : await this.store.getProjectBrief(workflowId);
-    if (projectBrief.status !== "frozen") throw new Error("frozen-project-brief-required");
     let existing = null;
     try {
       existing = await this.store.getPlaybook(workflowId);
@@ -456,20 +446,88 @@ export class CatalogService {
         throw new Error("playbook-template-migration-required");
       }
     }
-    const generated = await this.compileBoundPlaybook(workflow, projectBrief);
+    const generated = await this.compileBoundPlaybook(workflow, projectBrief, depth || (briefVersion ? "full" : "auto"));
     if (!existing) return this.store.createPlaybook(workflowId, generated, actor);
     return this.store.updatePlaybook(workflowId, {
       expectedRevision,
       patch: generated,
+      replaceStages: true,
     }, actor);
+  }
+
+  async lockExecutionBaseline(workflowId, {
+    expectedWorkflowRevision,
+    expectedBriefRevision,
+    expectedPlaybookRevision,
+    reviewedContentHash,
+  } = {}, actor) {
+    let [workflow, projectBrief, playbook] = await Promise.all([
+      this.store.getWorkflow(workflowId),
+      this.store.getProjectBrief(workflowId),
+      this.store.getPlaybook(workflowId),
+    ]);
+    if (workflow.revision !== Number(expectedWorkflowRevision)) throw new WorkflowConflictError(workflow.revision);
+    if (projectBrief.revision !== Number(expectedBriefRevision)) throw new WorkflowConflictError(projectBrief.revision);
+    if (playbook.revision !== Number(expectedPlaybookRevision)) throw new WorkflowConflictError(playbook.revision);
+    if (!reviewedContentHash || reviewedContentHash !== playbook.contentHash) throw new Error("playbook-review-hash-required");
+    if (playbook.source?.projectBriefContentHash
+      && playbook.source.projectBriefContentHash !== projectBriefContentHash(projectBrief)) {
+      throw new Error("playbook-brief-changed-regenerate-required");
+    }
+
+    const workflowPatch = {
+      scopeDescription: projectBrief.problemStatement,
+      nonGoals: projectBrief.outOfScope,
+      acceptanceCriteria: projectBrief.successCriteria,
+    };
+    const workflowChanged = workflow.scopeDescription !== workflowPatch.scopeDescription
+      || JSON.stringify(workflow.nonGoals || []) !== JSON.stringify(workflowPatch.nonGoals || [])
+      || JSON.stringify(workflow.acceptanceCriteria || []) !== JSON.stringify(workflowPatch.acceptanceCriteria || []);
+    if (workflowChanged) {
+      workflow = await this.store.updateWorkflow(workflowId, {
+        expectedRevision: workflow.revision,
+        patch: workflowPatch,
+      }, actor);
+    }
+    if (workflow.status !== "confirmed") {
+      workflow = await this.store.confirmWorkflow(workflowId, { expectedRevision: workflow.revision }, actor);
+    }
+    if (projectBrief.status !== "frozen") {
+      projectBrief = await this.store.freezeProjectBrief(workflowId, {
+        expectedRevision: projectBrief.revision,
+      }, actor);
+    }
+
+    const {
+      completeness: _completeness,
+      contentHash: _contentHash,
+      history: _history,
+      ...projectBriefSnapshot
+    } = projectBrief;
+    playbook = await this.store.updatePlaybook(workflowId, {
+      expectedRevision: playbook.revision,
+      patch: {
+        source: {
+          ...playbook.source,
+          projectBriefVersion: projectBrief.frozenVersion,
+          projectBriefRevision: projectBrief.revision,
+          projectBriefStatus: "frozen",
+          projectBriefContentHash: projectBriefContentHash(projectBrief),
+          projectBriefSnapshot,
+        },
+      },
+    }, actor);
+    playbook = await this.store.confirmPlaybook(workflowId, {
+      expectedRevision: playbook.revision,
+      reviewedContentHash: playbook.contentHash,
+    }, actor);
+    const progress = await this.store.startPlaybookProgress(workflowId, actor);
+    return { workflow, projectBrief, playbook, progress };
   }
 
   async exportPlaybook(workflowId, { format = "json" } = {}) {
     const playbook = await this.store.getPlaybook(workflowId, { includeHistory: true });
-    const projectBrief = (await this.store.getProjectBriefVersion(
-      workflowId,
-      playbook.source.projectBriefVersion,
-    )).snapshot;
+    const projectBrief = await this.projectBriefForPlaybook(workflowId, playbook);
     const verification = await this.store.getPlaybookVerification(workflowId);
     if (format === "markdown") return renderPlaybookMarkdown({ playbook, projectBrief, verification });
     if (format === "pdf") return this.pdfRenderer({ playbook, projectBrief, verification });
@@ -537,10 +595,13 @@ export class CatalogService {
       summary: {
         matchScore: plan.summary.matchScore,
         coverageRatio: plan.summary.coverageRatio,
+        evidencedCoverageRatio: plan.summary.evidencedCoverageRatio,
+        confirmedCoverageRatio: plan.summary.confirmedCoverageRatio,
         readinessScore: plan.summary.readinessScore,
         qualityScore: plan.summary.qualityScore,
         confidence: plan.summary.confidence,
         missingRequiredCapabilities: plan.summary.missingRequiredCapabilities,
+        unconfirmedRequiredCapabilities: plan.summary.unconfirmedRequiredCapabilities,
         externalCandidates: plan.summary.externalCandidates,
       },
       inventory: {

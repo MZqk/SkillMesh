@@ -11,9 +11,11 @@ test("exports decisions, evidence boundary, and the full lifecycle", async () =>
   });
   const markdown = planToMarkdown(plan);
 
-  assert.match(markdown, /^# 能力地图：开发一个 Web 应用/m);
+  assert.match(markdown, /^# 技能地图：开发一个 Web 应用/m);
   assert.match(markdown, /### 1\. 把方向变成问题/);
   assert.match(markdown, /### 9\. 从真实使用中学习/);
   assert.match(markdown, /能力：用户与问题研究（需要补齐）/);
+  assert.match(markdown, /文本证据覆盖：0%/);
+  assert.match(markdown, /人工确认覆盖：0%/);
   assert.match(markdown, /不会安装、执行或修改任何 Skill/);
 });

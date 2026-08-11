@@ -37,12 +37,12 @@ test("renders the exact Playbook source and content hash as a junior-readable Ma
   const publicView = publicPlaybook(playbook);
   const markdown = renderPlaybookMarkdown({ playbook, projectBrief });
 
-  assert.match(markdown, /^# 任务灯塔：从 0 到 1 开发手册/m);
+  assert.match(markdown, /^# 任务灯塔：从 0 到 1 执行方案/m);
   assert.match(markdown, new RegExp(publicView.contentHash));
   assert.match(markdown, /## 阶段 1：把方向变成问题/);
   assert.match(markdown, /## 阶段 9：从真实使用中学习/);
   assert.match(markdown, /### 1\. 写清首个用户与真实问题/);
-  assert.match(markdown, /Capability Atlas 不会自动运行 Skill、命令或修改项目/);
+  assert.match(markdown, /SkillMesh 不会自动运行 Skill、命令或修改项目/);
   assert.match(markdown, /### 本阶段 Skill 执行地图/);
   assert.match(markdown, /### 进入下一阶段的条件/);
   assert.match(markdown, /#### Skill 执行要求/);

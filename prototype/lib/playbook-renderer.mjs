@@ -81,7 +81,7 @@ function renderFailureModes(items) {
 
 function renderStep(step) {
   const commands = step.commands?.length
-    ? `\n\n#### 人工执行命令\n\n> Capability Atlas 不会执行以下命令。复制前请检查项目环境和影响范围。\n\n${fenced(step.commands.join("\n"), "sh")}`
+    ? `\n\n#### 人工执行命令\n\n> SkillMesh 不会执行以下命令。复制前请检查项目环境和影响范围。\n\n${fenced(step.commands.join("\n"), "sh")}`
     : "";
   return [
     `### ${step.order}. ${inline(step.title)}`,
@@ -165,13 +165,17 @@ function renderStage(stage) {
 
 export function renderPlaybookMarkdown({ playbook, projectBrief, verification = null }) {
   const publicView = publicPlaybook(playbook);
+  const briefLabel = publicView.source.projectBriefVersion > 0
+    ? `${publicView.source.projectBriefId}@基线-v${publicView.source.projectBriefVersion}`
+    : `${publicView.source.projectBriefId}@草稿-r${publicView.source.projectBriefRevision}`;
   const metadata = [
     ["Playbook ID", publicView.id],
     ["版本状态", publicView.status === "confirmed" ? `已确认 v${publicView.confirmedVersion}` : `草案 r${publicView.revision}`],
     ["验证等级", verificationLabel(publicView.verificationLevel)],
     ["内容哈希", publicView.contentHash],
     ["工作流来源", `${publicView.source.workflowReferenceId}@${publicView.source.workflowReferenceVersion}`],
-    ["Project Brief", `${publicView.source.projectBriefId}@${publicView.source.projectBriefVersion}`],
+    ["项目概况", briefLabel],
+    ["方案深度", publicView.planningDepth === "quick" ? "精简" : publicView.planningDepth === "standard" ? "标准" : "完整"],
     ["模板", `${publicView.source.templateId}@${publicView.source.templateVersion}`],
     ["交付目标", publicView.deliveryTarget],
   ];
@@ -189,10 +193,10 @@ export function renderPlaybookMarkdown({ playbook, projectBrief, verification = 
     "1. 每个步骤先看“Skill 执行要求”：主 Skill 必须持续使用到完成条件满足；备用 Skill 只在主 Skill 不适配时替代。",
     "2. Skill 输出必须对应步骤的交付物、完成深度与证据，不能只运行一次或给出泛化建议。",
     "3. 只有“进入下一阶段的条件”全部满足，且所需证据已保存，才能通过阶段门。",
-    "4. Capability Atlas 不会自动运行 Skill、命令或修改项目；执行与过门均需人工确认。",
+    "4. SkillMesh 不会自动运行 Skill、命令或修改项目；执行与过门均需人工确认。",
     "5. 阶段不能删除；确实不适用时，必须保留最低判断并填写原因。",
     "",
-    "## 冻结的 Project Brief",
+    publicView.source.projectBriefVersion > 0 ? "## 已锁定的项目概况" : "## 项目概况草稿",
     "",
     `- 项目：${inline(projectBrief.projectName)}`,
     `- 问题：${inline(projectBrief.problemStatement)}`,
@@ -227,7 +231,7 @@ export function renderPlaybookMarkdown({ playbook, projectBrief, verification = 
     "",
     "- Agent 生成：结构与字段通过系统校验，但内容尚未人工确认。",
     "- 维护者已审：维护者已检查草案与变更差异。",
-    "- 样例已跑通：至少一个标准样例按手册完成。",
+    "- 样例已跑通：至少一个标准样例按方案完成。",
     "- 初级开发者已验证：目标用户可在有限协助下完成项目。",
     "",
   ].join("\n");

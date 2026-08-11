@@ -35,7 +35,7 @@ const RULES = [
     id: "elevated-command",
     severity: "medium",
     pattern: /(^|\s)sudo\s+/im,
-    message: "包含提权命令；Capability Atlas 本身不会执行 sudo。",
+    message: "包含提权命令；SkillMesh 本身不会执行 sudo。",
   },
   {
     id: "dynamic-evaluation",

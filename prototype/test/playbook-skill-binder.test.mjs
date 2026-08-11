@@ -95,3 +95,64 @@ test("binds a primary Skill, alternatives, evidence rationale, and explicit capa
   assert.equal(normalized.skillBindingAssessment.inventoryUniqueContent, 42);
   assert.doesNotMatch(JSON.stringify(normalized), /should-not-leak/);
 });
+
+test("keeps unreviewed strong evidence as an alternative instead of a trusted primary", () => {
+  const playbook = {
+    workflowId: "workflow-2",
+    title: "安全绑定测试",
+    source: { workflowId: "workflow-2", projectBriefVersion: 1 },
+    stages: [{
+      id: "build",
+      title: "实现",
+      mode: "engineer",
+      steps: [{
+        id: "implement",
+        title: "实现功能",
+        objective: "交付功能。",
+        requiredCapabilities: ["implementation"],
+        actions: ["编码"],
+        prompt: "实现功能",
+        expectedOutputs: ["代码"],
+        acceptanceCriteria: ["测试通过"],
+        failureModes: [{ symptom: "测试失败", recovery: "修复" }],
+      }],
+      qualityGate: { criteria: ["测试通过"] },
+    }],
+  };
+  const assessment = {
+    schemaVersion: "0.2",
+    generatedAt: "2026-08-09T00:00:00.000Z",
+    scoring: { version: "lexical-evidence-v2" },
+    workflow: { revision: 1 },
+    summary: { inventoryUniqueContent: 1 },
+    stages: [{
+      id: "build",
+      capabilityCoverage: [{
+        id: "implementation",
+        label: "工程实现",
+        status: "evidenced",
+        gapQuery: "implementation",
+      }],
+      candidates: [{
+        id: "hash-code-helper",
+        contentHash: "hash-code-helper",
+        name: "code-helper",
+        score: 0.96,
+        confidence: 0.88,
+        decision: "unreviewed",
+        readiness: "unverified",
+        warnings: [],
+        capabilityScores: [{ capabilityId: "implementation", strength: "strong" }],
+      }],
+    }],
+  };
+
+  const bound = bindSkillsToPlaybook({ playbook, assessment });
+  const step = bound.stages[0].steps[0];
+
+  assert.equal(step.skillBindings.length, 1);
+  assert.equal(step.skillBindings[0].role, "alternative");
+  assert.equal(step.skillBindings[0].reviewStatus, "suggested");
+  assert.equal(step.skillGaps.length, 1);
+  assert.equal(step.skillGaps[0].status, "uncertain");
+});

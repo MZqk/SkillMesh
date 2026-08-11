@@ -60,7 +60,7 @@ function gapFor(capabilityId, coverage, capabilityLabels, step) {
   return {
     capabilityId,
     label: coverage?.label || capabilityLabels.get(capabilityId) || capabilityId,
-    status: coverage?.status === "uncertain" ? "uncertain" : "missing",
+    status: coverage?.status === "missing" ? "missing" : "uncertain",
     query: coverage?.gapQuery || capabilityLabels.get(capabilityId) || capabilityId,
     externalCandidates: external,
     humanFallback: `当前没有足够证据证明本机 Skill 覆盖此能力。继续时按“${step.title}”的操作与验收标准人工完成，并记录需要补齐或创建的 Skill。`,
@@ -70,37 +70,62 @@ function gapFor(capabilityId, coverage, capabilityLabels, step) {
 export function bindSkillsToPlaybook({ playbook, assessment }) {
   if (!playbook?.stages || !assessment?.stages) throw new Error("playbook-skill-assessment-required");
   const assessmentByStage = new Map(assessment.stages.map((stage) => [stage.id, stage]));
+  const globalCapabilityCoverage = assessment.stages.flatMap((stage) => stage.capabilityCoverage || []);
+  const globalCapabilityLabels = new Map(globalCapabilityCoverage.map((capability) => [capability.id, capability.label]));
+  const globalCandidateMap = new Map();
+  for (const candidate of assessment.stages.flatMap((stage) => stage.candidates || [])) {
+    const key = candidate.contentHash || candidate.id || candidate.name;
+    const current = globalCandidateMap.get(key);
+    if (!current) {
+      globalCandidateMap.set(key, structuredClone(candidate));
+      continue;
+    }
+    const scores = new Map((current.capabilityScores || []).map((score) => [score.capabilityId, score]));
+    for (const score of candidate.capabilityScores || []) {
+      const previous = scores.get(score.capabilityId);
+      if (!previous || Number(score.score || 0) > Number(previous.score || 0)) scores.set(score.capabilityId, score);
+    }
+    current.capabilityScores = [...scores.values()];
+    current.score = Math.max(Number(current.score || 0), Number(candidate.score || 0));
+    current.confidence = Math.max(Number(current.confidence || 0), Number(candidate.confidence || 0));
+    if (candidate.decision === "confirmed") current.decision = "confirmed";
+    current.warnings = [...new Set([...(current.warnings || []), ...(candidate.warnings || [])])];
+  }
+  const globalCandidates = [...globalCandidateMap.values()];
   const result = structuredClone(playbook);
   result.stages = result.stages.map((stage) => {
     const assessedStage = assessmentByStage.get(stage.id);
-    const capabilityLabels = new Map((assessedStage?.capabilityCoverage || [])
-      .map((capability) => [capability.id, capability.label]));
+    const capabilityLabels = assessedStage
+      ? new Map((assessedStage.capabilityCoverage || []).map((capability) => [capability.id, capability.label]))
+      : globalCapabilityLabels;
+    const candidatePool = assessedStage?.candidates || globalCandidates;
+    const coveragePool = assessedStage?.capabilityCoverage || globalCapabilityCoverage;
     return {
       ...stage,
       steps: stage.steps.map((step) => {
         const required = step.requiredCapabilities || [];
-        const ranked = (assessedStage?.candidates || []).map((candidate) => {
+        const ranked = candidatePool.map((candidate) => {
           const matches = candidateMatches(candidate, required);
           return { candidate, matches, priority: candidatePriority(candidate, matches) };
         }).filter((item) => item.matches.length)
           .sort((left, right) => right.priority - left.priority);
-        const strong = ranked.filter((item) => item.matches.some((match) => match.strength === "strong"));
-        const primary = strong[0] || null;
+        const confirmedStrong = ranked.filter((item) =>
+          item.candidate.decision === "confirmed"
+          && item.matches.some((match) => match.strength === "strong"));
+        const primary = confirmedStrong[0] || null;
         const alternatives = ranked.filter((item) => item !== primary).slice(0, primary ? 2 : 3);
         const bindings = [
           ...(primary ? [bindingFor(primary.candidate, primary.matches, capabilityLabels, "primary", step)] : []),
           ...alternatives.map((item) => bindingFor(item.candidate, item.matches, capabilityLabels, "alternative", step)),
         ];
-        const stronglyCovered = new Set(primary?.matches
-          .filter((match) => match.strength === "strong")
-          .map((match) => match.capabilityId) || []);
-        for (const alternative of alternatives) {
-          for (const match of alternative.matches.filter((item) => item.strength === "strong")) {
+        const stronglyCovered = new Set();
+        for (const confirmed of confirmedStrong) {
+          for (const match of confirmed.matches.filter((item) => item.strength === "strong")) {
             stronglyCovered.add(match.capabilityId);
           }
         }
         const gaps = required.filter((capabilityId) => !stronglyCovered.has(capabilityId)).map((capabilityId) => {
-          const coverage = assessedStage?.capabilityCoverage?.find((item) => item.id === capabilityId);
+          const coverage = coveragePool.find((item) => item.id === capabilityId);
           return gapFor(capabilityId, coverage, capabilityLabels, step);
         });
         return {

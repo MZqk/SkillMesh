@@ -21,15 +21,20 @@ const SKIP_DIRECTORIES = new Set([
 const NESTED_AGENT_MIRRORS = new Set([
   ".agents",
   ".claude",
+  ".cline",
   ".codex",
+  ".continue",
+  ".copilot",
   ".cursor",
   ".factory",
+  ".gemini",
   ".gbrain",
   ".hermes",
   ".kiro",
   ".openclaw",
   ".opencode",
   ".slate",
+  ".trae",
   ".windsurf",
 ]);
 
@@ -63,6 +68,12 @@ function asBoolean(value, fallback = false) {
     if (/^(?:false|no|off|0)$/i.test(value.trim())) return false;
   }
   return fallback;
+}
+
+function asScalarString(value) {
+  if (typeof value === "string" || typeof value === "number") return String(value).trim();
+  if (Array.isArray(value)) return value.map((item) => asScalarString(item)).find(Boolean) || "";
+  return "";
 }
 
 function inferPackageId(root, relativePath, metadata) {
@@ -190,6 +201,12 @@ async function readSkill(filePath, root, { maxBytes }) {
   const allowedTools = asStringArray(metadata["allowed-tools"] || metadata.allowed_tools);
   const triggers = asStringArray(metadata.triggers || metadata.trigger);
   const keywords = asStringArray(metadata.keywords || metadata.tags);
+  const invocation = asScalarString(
+    metadata.invocation
+      || metadata.command
+      || metadata["slash-command"]
+      || metadata.slash_command,
+  ).slice(0, 500);
 
   return {
     id: hashText(`${declaredPath}\0${contentHash}`).slice(0, 20),
@@ -219,6 +236,7 @@ async function readSkill(filePath, root, { maxBytes }) {
     allowedTools,
     triggers,
     keywords,
+    invocation,
     packageId: inferPackageId(root, relativePath, metadata),
     diagnostics: [...new Set(diagnostics)],
     version: String(metadata.version || metadata["source-version"] || "").trim(),

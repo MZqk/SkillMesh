@@ -483,7 +483,7 @@ export class EcosystemCatalogService {
         const headers = {
           accept: "application/vnd.github.raw+json",
           "x-github-api-version": "2022-11-28",
-          "user-agent": "capability-atlas-skill-review",
+          "user-agent": "skillmesh-skill-review",
         };
         if (this.githubToken) headers.authorization = `Bearer ${this.githubToken}`;
         const response = await this.fetcher(apiUrl, {
@@ -592,15 +592,40 @@ export class EcosystemCatalogService {
     return request;
   }
 
-  async candidateFor({ itemId, skillName, stageId, capabilityId, query = "", rationale = "" }) {
+  async #reviewedEvidence({ itemId, skillName, reviewedContentHash }) {
+    const expectedHash = text(reviewedContentHash, 200).toLowerCase();
+    if (!/^[a-f0-9]{64}$/u.test(expectedHash)) throw new Error("ecosystem-skill-review-required");
+    const preview = await this.previewForSkill({ itemId, skillName });
+    if (preview.document.sha256 !== expectedHash) throw new Error("ecosystem-reviewed-content-changed");
+    return {
+      reviewedContentHash: expectedHash,
+      reviewedAt: new Date().toISOString(),
+      reviewedRepository: preview.source.repository,
+      reviewedBranch: preview.source.branch,
+      reviewedPath: preview.source.path,
+      reviewedSeverity: preview.review.severity,
+    };
+  }
+
+  async candidateFor({ itemId, skillName, stageId, capabilityId, query = "", rationale = "", reviewedContentHash = "" }) {
     if (!text(stageId, 200) || !text(capabilityId, 200)) throw new Error("ecosystem-gap-required");
     const catalog = await this.load();
     const item = catalog.items.find((entry) => entry.id === itemId);
     if (!item) throw new Error("ecosystem-item-not-found");
-    return candidateForItem(item, { skillName, stageId, capabilityId, query, rationale });
+    const candidate = candidateForItem(item, { skillName, stageId, capabilityId, query, rationale });
+    const reviewed = await this.#reviewedEvidence({ itemId, skillName, reviewedContentHash });
+    return { ...candidate, ...reviewed };
   }
 
-  async candidatesForChain({ itemId, skillNames, stageId, capabilityId, query = "", rationale = "" }) {
+  async candidatesForChain({
+    itemId,
+    skillNames,
+    stageId,
+    capabilityId,
+    query = "",
+    rationale = "",
+    reviewedContentHashes = {},
+  }) {
     if (!text(stageId, 200) || !text(capabilityId, 200)) throw new Error("ecosystem-gap-required");
     if (!Array.isArray(skillNames) || !skillNames.length || skillNames.length > 100) {
       throw new Error("ecosystem-chain-skills-required");
@@ -616,7 +641,7 @@ export class EcosystemCatalogService {
     for (const skillName of requested) {
       if (!item.recordableSkills.includes(skillName)) throw new Error("ecosystem-skill-not-recordable");
     }
-    return item.skills
+    const ordered = item.skills
       .filter((skillName) => requested.has(skillName))
       .map((skillName) => candidateForItem(item, {
         skillName,
@@ -625,6 +650,16 @@ export class EcosystemCatalogService {
         query,
         rationale: rationale || `“${item.group}”组合链成员 ${skillName}，用于补齐同一能力缺口。`,
       }));
+    const candidates = [];
+    for (const candidate of ordered) {
+      const reviewed = await this.#reviewedEvidence({
+        itemId,
+        skillName: candidate.skillName,
+        reviewedContentHash: reviewedContentHashes?.[candidate.skillName],
+      });
+      candidates.push({ ...candidate, ...reviewed });
+    }
+    return candidates;
   }
 
   async comparisonForGroup(groupId) {

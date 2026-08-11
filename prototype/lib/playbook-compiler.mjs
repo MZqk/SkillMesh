@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { projectBriefContentHash } from "./project-brief-model.mjs";
+
 const TEMPLATE_PATH = path.resolve(import.meta.dirname, "../data/web-product-playbook.json");
 const DEFAULT_WEB_STACK = [
   "Next.js App Router",
@@ -126,6 +128,122 @@ function fallbackStage({ stage, index, stageTitleById, projectBrief }) {
   };
 }
 
+const DEPTH_STAGE_LIMITS = {
+  quick: 3,
+  standard: 5,
+  full: 9,
+};
+
+const DEPTH_STAGE_LABELS = {
+  quick: [
+    ["定义", "澄清目标与边界"],
+    ["交付", "完成最小可行结果"],
+    ["验证", "验证结果并收尾"],
+  ],
+  standard: [
+    ["探索", "明确方向与证据"],
+    ["定义", "确定范围与方案"],
+    ["实现", "交付端到端主路径"],
+    ["验收", "验证质量与风险"],
+    ["发布", "发布、观测与改进"],
+  ],
+};
+
+export function resolvePlanningDepth({ workflow, projectBrief, requestedDepth = "auto" }) {
+  if (["quick", "standard", "full"].includes(requestedDepth)) return requestedDepth;
+  const riskLevel = workflow?.requirement?.riskLevel || "medium";
+  if (projectBrief?.deploymentTarget === "production-ready" || ["high", "critical"].includes(riskLevel)) return "full";
+  if (projectBrief?.deploymentTarget === "local-prototype" || riskLevel === "low" || (workflow?.stages || []).length <= 3) return "quick";
+  return "standard";
+}
+
+function partitionStages(stages, targetCount) {
+  if (stages.length <= targetCount) return stages.map((stage) => [stage]);
+  if (stages.length === 9 && targetCount === 5) {
+    return [[...stages.slice(0, 2)], [...stages.slice(2, 4)], [...stages.slice(4, 6)], [stages[6]], [...stages.slice(7, 9)]];
+  }
+  const groups = [];
+  let offset = 0;
+  for (let index = 0; index < targetCount; index += 1) {
+    const remaining = stages.length - offset;
+    const remainingGroups = targetCount - index;
+    const size = Math.ceil(remaining / remainingGroups);
+    groups.push(stages.slice(offset, offset + size));
+    offset += size;
+  }
+  return groups.filter((group) => group.length);
+}
+
+function condensedStage({ group, groupIndex, depth, projectBrief }) {
+  const labels = DEPTH_STAGE_LABELS[depth] || [];
+  const [phase, title] = labels[groupIndex] || [group[0].phase, group.map((stage) => stage.title).join(" / ")];
+  const id = `${depth}-${groupIndex + 1}`;
+  const requiredCapabilities = unique(group.flatMap((stage) => (stage.capabilities || []).map((capability) => capability.id)));
+  const expectedOutputs = unique(group.flatMap((stage) => stage.deliverables || []));
+  const acceptanceCriteria = unique(group.map((stage) => stage.acceptanceGate).filter(Boolean));
+  const questions = unique(group.flatMap((stage) => stage.questions || []));
+  const sourceTitles = group.map((stage) => stage.title);
+  const hardGate = group.some((stage) => Number(stage.order || 0) >= 5);
+  const stepTitle = depth === "quick" ? title : `完成${title}`;
+  const promptStage = {
+    phase,
+    title,
+    questions,
+    deliverables: expectedOutputs,
+    acceptanceGate: acceptanceCriteria.join("；"),
+  };
+  return {
+    id,
+    phase,
+    title,
+    summary: `合并原流程的“${sourceTitles.join("、")}”，只保留本次交付必须完成的判断与产出。`,
+    mode: hardGate ? "loop" : "vibe",
+    applicability: "required",
+    applicabilityReason: "",
+    minimumAssessment: `至少完成“${sourceTitles.join("、")}”的关键判断，并说明未覆盖项是否会阻断交付。`,
+    dependencies: groupIndex ? [`${depth}-${groupIndex}`] : [],
+    steps: [{
+      id: `${id}-complete`,
+      title: stepTitle,
+      objective: `用一个可验收步骤完成：${sourceTitles.join("、")}。`,
+      requiredCapabilities,
+      prerequisites: groupIndex ? [`上一阶段“${(labels[groupIndex - 1] || ["", "前置阶段"])[1]}”已经完成。`] : [],
+      actions: [
+        ...group.map((stage) => `完成“${stage.title}”：${stage.description || stage.summary || stage.acceptanceGate || "形成可供下一步使用的结论与产出。"}`),
+        "保存关键产出、未决风险和验收结果；不展开本次目标不需要的治理动作。",
+      ],
+      prompt: { text: fallbackPrompt({ brief: projectBrief, stage: promptStage, mode: hardGate ? "loop" : "vibe" }), copyable: true },
+      commands: [],
+      expectedOutputs: expectedOutputs.length ? expectedOutputs : [`${title}产出`],
+      acceptanceCriteria: acceptanceCriteria.length ? acceptanceCriteria : ["结果可以被下一阶段直接使用，并且剩余风险已明确。"],
+      failureModes: [{
+        symptom: "合并后的步骤范围仍然过大，或关键结果无法验收。",
+        likelyCause: "目标、依赖或完成标准仍不明确。",
+        recovery: "只保留阻断主路径的问题，把其他事项记为后续项，再按验收标准重新执行本步骤。",
+      }],
+      evidenceRequirements: hardGate ? unique([...expectedOutputs, "验收结果与剩余风险记录"]) : ["关键假设与取舍记录"],
+      skillBindings: [],
+      execution: {
+        mode: "manual",
+        executor: null,
+        autoExecutionAllowed: false,
+        approvalPolicy: hardGate ? "human-at-gate" : "human-before-action",
+        evidenceFields: ["notes", "artifactLinks", "acceptanceResult"],
+      },
+    }],
+    qualityGate: {
+      level: hardGate ? "hard" : "soft",
+      criteria: acceptanceCriteria.length ? acceptanceCriteria : ["结果可以被下一阶段直接使用，并且剩余风险已明确。"],
+      requiredEvidence: hardGate ? expectedOutputs : [],
+    },
+  };
+}
+
+function projectBriefSnapshot(projectBrief) {
+  const { completeness: _completeness, contentHash: _contentHash, history: _history, ...snapshot } = projectBrief;
+  return structuredClone(snapshot);
+}
+
 export async function loadPlaybookTemplate() {
   if (!cachedTemplate) cachedTemplate = JSON.parse(await fs.readFile(TEMPLATE_PATH, "utf8"));
   return structuredClone(cachedTemplate);
@@ -135,16 +253,17 @@ export function playbookTemplateContentHash(template) {
   return crypto.createHash("sha256").update(JSON.stringify(template)).digest("hex");
 }
 
-export async function compilePlaybookDraft({ workflow, projectBrief }) {
+export async function compilePlaybookDraft({ workflow, projectBrief, depth = "full" }) {
   if (!workflow?.id) throw new Error("playbook-workflow-required");
-  if (!projectBrief?.id || projectBrief.status !== "frozen") throw new Error("frozen-project-brief-required");
+  if (!projectBrief?.id) throw new Error("project-brief-required");
   const template = await loadPlaybookTemplate();
-  const title = `${projectBrief.projectName}：从 0 到 1 开发手册`;
+  const planningDepth = resolvePlanningDepth({ workflow, projectBrief, requestedDepth: depth });
+  const title = `${projectBrief.projectName}：从 0 到 1 执行方案`;
   const stageTitleById = new Map((workflow.stages || []).map((stage) => [stage.id, stage.title]));
   const goldenStack = projectBrief.preferredStack?.length ? projectBrief.preferredStack : DEFAULT_WEB_STACK;
   const context = templateContext(projectBrief, goldenStack);
   const templateStages = new Map(template.stages.map((stage) => [stage.id, stage]));
-  const stages = (workflow.stages || []).map((stage, index) => {
+  const fullStages = (workflow.stages || []).map((stage, index) => {
     const source = templateStages.get(stage.id);
     if (!source) return fallbackStage({ stage, index, stageTitleById, projectBrief });
     const content = materialize(source, context);
@@ -191,12 +310,23 @@ export async function compilePlaybookDraft({ workflow, projectBrief }) {
       },
     };
   });
+  const stageLimit = DEPTH_STAGE_LIMITS[planningDepth];
+  const stages = planningDepth === "full" || fullStages.length <= stageLimit
+    ? fullStages
+    : partitionStages(workflow.stages || [], stageLimit).map((group, groupIndex) => condensedStage({
+      group,
+      groupIndex,
+      depth: planningDepth,
+      projectBrief,
+    }));
+  const depthLabel = planningDepth === "quick" ? "精简" : planningDepth === "standard" ? "标准" : "完整";
   return {
     workflowId: workflow.id,
     title,
-    summary: "按九阶段编排本机 Skill，明确每一步由哪个 Skill 负责、使用到什么程度、保存什么证据，以及满足哪些条件后才能进入下一阶段。",
+    summary: `按${depthLabel}深度编排本机 Skill，明确每一步由哪个 Skill 负责、做到什么程度，以及满足哪些条件后进入下一阶段。`,
     audience: "需要按 Skill 执行、验收和阶段门推进 Web 项目的开发者。",
     deliveryTarget: projectBrief.deploymentTarget,
+    planningDepth,
     goldenStack,
     source: {
       workflowId: workflow.id,
@@ -204,7 +334,11 @@ export async function compilePlaybookDraft({ workflow, projectBrief }) {
       workflowReferenceId: workflow.reference?.id || workflow.id,
       workflowReferenceVersion: workflow.reference?.version || String(workflow.revision),
       projectBriefId: projectBrief.id,
-      projectBriefVersion: projectBrief.frozenVersion,
+      projectBriefVersion: projectBrief.status === "frozen" ? projectBrief.frozenVersion : 0,
+      projectBriefRevision: projectBrief.revision,
+      projectBriefStatus: projectBrief.status,
+      projectBriefContentHash: projectBriefContentHash(projectBrief),
+      projectBriefSnapshot: projectBriefSnapshot(projectBrief),
       templateId: template.id,
       templateVersion: template.version,
       templateContentHash: playbookTemplateContentHash(template),

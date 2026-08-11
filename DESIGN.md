@@ -1,5 +1,5 @@
 ---
-name: Capability Atlas
+name: SkillMesh
 description: 本机 Agent Skill 能力映射与证据审阅工作台
 colors:
   primary: "#3A5CCC"
@@ -90,13 +90,13 @@ components:
     padding: "4px 8px"
 ---
 
-# Design System: Capability Atlas
+# Design System: SkillMesh
 
 ## Overview
 
 **Creative North Star: "证据测绘桌"**
 
-Capability Atlas 应像一张被反复使用的证据测绘桌：用户先看到当前工作流、覆盖结论和下一步动作，需要时再打开来源、路径与详细判断。界面以清楚的分隔、稳定的布局和熟悉的控件建立信任，而不是用装饰制造“智能感”。
+SkillMesh 应像一张被反复使用的证据测绘桌：用户先看到当前工作流、覆盖结论和下一步动作，需要时再打开来源、路径与详细判断。界面以清楚的分隔、稳定的布局和熟悉的控件建立信任，而不是用装饰制造“智能感”。
 
 设计采用克制的产品 UI register。已有工作流时，工作台占据全部注意力；无工作流时，空状态承担简短介绍和行动指引。颜色只承担选择、状态、焦点与主操作，信息密度通过分组和渐进披露管理。
 

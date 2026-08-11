@@ -55,7 +55,27 @@ function provenanceCheck(item) {
   if (!packageIsAllowed(item.packageId)) issues.push("external-package-id-invalid");
   if (item.sourceUrl && !String(item.sourceUrl).startsWith("https://")) issues.push("external-source-must-use-https");
   if (!item.externalCandidateId) issues.push("external-candidate-provenance-missing");
+  if (!/^[a-f0-9]{64}$/u.test(String(item.reviewedContentHash || ""))) issues.push("external-reviewed-content-missing");
   return issues;
+}
+
+function withReviewedContentMismatch(scan, item, installedHash) {
+  const severityOrder = ["none", "low", "medium", "high", "critical"];
+  const severity = severityOrder.indexOf(scan?.severity) > severityOrder.indexOf("high")
+    ? scan.severity
+    : "high";
+  return {
+    ...(scan || {}),
+    status: "blocked",
+    severity,
+    findings: [{
+      id: "reviewed-content-hash-mismatch",
+      severity: "high",
+      message: `安装内容指纹 ${installedHash || "missing"} 与已审阅指纹 ${item.reviewedContentHash} 不一致。`,
+      file: "SKILL.md",
+    }, ...(scan?.findings || [])],
+    scannedAt: scan?.scannedAt || new Date().toISOString(),
+  };
 }
 
 function abortError() {
@@ -631,10 +651,19 @@ export class InstallationManager {
       targetPaths[target.id] = targetPath;
       if (!await lstat(targetPath)) await this.#createSymlink(job, item, targetPath, canonicalPath);
     }
-    const scan = await this.securityScanner(canonicalPath);
-    const result = await this.#applyScanPolicy(job, item, canonicalPath, targetPaths, scan);
     const installedHash = await skillContentHash(canonicalPath).catch(() => "");
-    return { ...result, canonicalPath, targetPaths, installedContentHash: installedHash, error: "" };
+    let scan = await this.securityScanner(canonicalPath);
+    if (installedHash !== item.reviewedContentHash) {
+      scan = withReviewedContentMismatch(scan, item, installedHash);
+    }
+    const result = await this.#applyScanPolicy(job, item, canonicalPath, targetPaths, scan);
+    return {
+      ...result,
+      canonicalPath,
+      targetPaths,
+      installedContentHash: installedHash,
+      error: result.error || "",
+    };
   }
 
   async #applyScanPolicy(job, item, canonicalPath, targetPaths, scan) {
@@ -745,7 +774,10 @@ export class InstallationManager {
         targetAgent,
         matchScore: assessment.summary.matchScore,
         coverageRatio: assessment.summary.coverageRatio,
+        evidencedCoverageRatio: assessment.summary.evidencedCoverageRatio ?? assessment.summary.coverageRatio,
+        confirmedCoverageRatio: assessment.summary.confirmedCoverageRatio || 0,
         missingRequiredCapabilities: assessment.summary.missingRequiredCapabilities,
+        unconfirmedRequiredCapabilities: assessment.summary.unconfirmedRequiredCapabilities || 0,
         assessedAt: new Date().toISOString(),
       });
     }
