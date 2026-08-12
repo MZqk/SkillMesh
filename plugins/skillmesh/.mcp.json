@@ -2,7 +2,7 @@
   "mcpServers": {
     "skillmesh": {
       "title": "SkillMesh",
-      "description": "Local Agent Skill inventory, workflow mapping, and native Quick Use Widget.",
+      "description": "Native MCP App for local Agent Skill mapping, controlled installation, and ui/message handoff.",
       "cwd": ".",
       "command": "node",
       "args": ["./run-mcp.mjs"]

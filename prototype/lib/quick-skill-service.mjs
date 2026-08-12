@@ -1,15 +1,13 @@
 import { canonicalSkills } from "./skill-identity.mjs";
-import { buildQuickDeckSections } from "../public/quick-skill-deck.js";
+import { buildQuickDeckSections } from "./quick-skill-deck.mjs";
+import { resolveAgentTarget, skillSupportsTarget } from "./agent-targets.mjs";
 
-const CODEX_ALIASES = new Set(["codex", "codex-cli", "openai-codex"]);
-
-function normalizedAgent(value) {
-  return String(value || "").trim().toLocaleLowerCase().replace(/[\s_]+/g, "-");
-}
-
-export function isCodexCompatible(skill) {
-  const declared = (skill?.supportedAgents || []).map(normalizedAgent).filter(Boolean);
-  return !declared.length || declared.includes("*") || declared.some((agent) => CODEX_ALIASES.has(agent));
+export function isTargetCompatible(skill, targetAgent) {
+  try {
+    return skillSupportsTarget(skill?.supportedAgents || [], targetAgent);
+  } catch {
+    return false;
+  }
 }
 
 function workflowTitle(workflow) {
@@ -51,15 +49,6 @@ function selectedStage(workflow, state, requestedStageId) {
   return saved || stages[0] || null;
 }
 
-async function optional(loader, missingMessage) {
-  try {
-    return await loader();
-  } catch (error) {
-    if (error.message === missingMessage) return null;
-    throw error;
-  }
-}
-
 export class QuickSkillService {
   constructor({ store, service }) {
     if (!store || !service) throw new Error("quick-skill-service-dependencies-required");
@@ -67,7 +56,8 @@ export class QuickSkillService {
     this.service = service;
   }
 
-  async snapshot({ workflowId, stageId, refresh = false } = {}) {
+  async snapshot({ workflowId, stageId, refresh = false, targetAgent = "codex" } = {}) {
+    const target = resolveAgentTarget(targetAgent);
     const [data, state, inventory] = await Promise.all([
       this.store.read(),
       this.store.getQuickSkillState(),
@@ -78,26 +68,16 @@ export class QuickSkillService {
     const workflow = selectedWorkflow(workflows, state, workflowId);
     const stage = selectedStage(workflow, state, stageId);
     const allSkills = canonicalSkills((inventory.skills || []).filter((skill) => skill.enabled !== false));
-    const skills = allSkills.filter(isCodexCompatible);
+    const skills = allSkills.filter((skill) => isTargetCompatible(skill, target.id));
 
-    let playbook = null;
-    let progress = null;
-    let plan = null;
+    let skillPlan = null;
     if (workflow) {
-      playbook = await optional(() => this.store.getPlaybook(workflow.id), "playbook-not-found");
-      if (playbook) progress = await this.store.getPlaybookProgress(workflow.id);
-      else plan = await this.service.assessWorkflow(workflow.id, {
-        refresh: false,
-        includePaths: false,
-        targetAgent: "codex",
-      });
+      skillPlan = await this.service.getSkillUsagePlan(workflow.id, { refresh: false, targetAgents: [target.id], currentAgent: target.id });
     }
 
     const sections = buildQuickDeckSections({
       skills,
-      playbook,
-      progress,
-      plan,
+      skillPlan,
       selectedStageId: stage?.id || null,
       preferences: state,
     });
@@ -111,7 +91,7 @@ export class QuickSkillService {
     return {
       schemaVersion: "1",
       generatedAt: new Date().toISOString(),
-      targetAgent: { id: "codex", label: "当前 Codex", fixed: true },
+      targetAgent: { id: target.id, label: `当前 ${target.label}`, fixed: true },
       preferenceRevision: state.revision,
       state: {
         ...state,
@@ -135,10 +115,10 @@ export class QuickSkillService {
         hiddenIncompatibleFavorites,
       },
       fallbackSummary: sections.totalVisible
-        ? `SkillMesh 为当前 Codex 准备了 ${sections.totalVisible} 张快速使用卡片。`
+        ? `SkillMesh 为当前 ${target.label} 准备了 ${sections.totalVisible} 张快速使用卡片。`
         : workflows.length > 1 && !workflow
           ? "SkillMesh 需要先选择一个工作流；收藏和最近使用仍会保留。"
-          : "SkillMesh 当前没有可在 Codex 中展示的快速 Skill。",
+          : `SkillMesh 当前没有可在 ${target.label} 中展示的快速 Skill。`,
     };
   }
 }

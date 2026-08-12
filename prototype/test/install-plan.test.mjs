@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { buildInstallationPlan } from "../lib/install-plan.mjs";
 
-const actor = { type: "human", name: "fixture", channel: "web" };
+const actor = { type: "human", name: "fixture", channel: "mcp-app" };
 
 function workflow() {
   return {

@@ -1,7 +1,7 @@
 import {
   normalizeQuickDeckPreferences,
   recordQuickUse,
-} from "../public/quick-skill-deck.js";
+} from "./quick-skill-deck.mjs";
 
 export const QUICK_SKILL_STATE_SCHEMA_VERSION = "1";
 export const QUICK_SKILL_FAVORITE_LIMIT = 50;
@@ -33,7 +33,6 @@ export function emptyQuickSkillState() {
     activeStageByWorkflow: {},
     favorites: [],
     recent: [],
-    legacyWebMigrationCompleted: false,
     updatedAt: null,
   };
 }
@@ -48,22 +47,8 @@ export function normalizeQuickSkillState(value) {
     activeStageByWorkflow: normalizedActiveStages(source.activeStageByWorkflow),
     favorites: preferences.favorites.slice(0, QUICK_SKILL_FAVORITE_LIMIT),
     recent: preferences.recent.slice(0, QUICK_SKILL_RECENT_LIMIT),
-    legacyWebMigrationCompleted: source.legacyWebMigrationCompleted === true,
     updatedAt: validIsoDate(source.updatedAt),
   };
-}
-
-function latestRecent(...collections) {
-  const byHash = new Map();
-  for (const collection of collections) {
-    for (const item of normalizeQuickDeckPreferences({ recent: collection }).recent) {
-      const current = byHash.get(item.contentHash);
-      if (!current || item.usedAt > current.usedAt) byHash.set(item.contentHash, item);
-    }
-  }
-  return [...byHash.values()]
-    .sort((left, right) => right.usedAt.localeCompare(left.usedAt))
-    .slice(0, QUICK_SKILL_RECENT_LIMIT);
 }
 
 function workflowIndex(workflows) {
@@ -72,41 +57,6 @@ function workflowIndex(workflows) {
 
 function validStage(workflow, stageId) {
   return Boolean(stageId && (workflow?.stages || []).some((stage) => stage.id === stageId));
-}
-
-export function migrateLegacyQuickSkillState(current, legacy = {}, workflows = []) {
-  const state = normalizeQuickSkillState(current);
-  if (state.legacyWebMigrationCompleted) return { state, migrated: false };
-
-  const preferences = normalizeQuickDeckPreferences(legacy.preferences || legacy);
-  const byWorkflow = workflowIndex(workflows);
-  const serverWorkflow = byWorkflow.get(state.activeWorkflowId);
-  const browserWorkflow = byWorkflow.get(cleanText(legacy.activeWorkflowId, 200));
-  const selectedWorkflow = serverWorkflow || browserWorkflow || (byWorkflow.size === 1 ? [...byWorkflow.values()][0] : null);
-  const activeStageByWorkflow = { ...state.activeStageByWorkflow };
-  if (selectedWorkflow) {
-    const existingStage = activeStageByWorkflow[selectedWorkflow.id];
-    const browserStage = cleanText(legacy.selectedStageId, 200);
-    if (!validStage(selectedWorkflow, existingStage)) {
-      const fallback = validStage(selectedWorkflow, browserStage)
-        ? browserStage
-        : selectedWorkflow.stages?.[0]?.id || "";
-      if (fallback) activeStageByWorkflow[selectedWorkflow.id] = fallback;
-      else delete activeStageByWorkflow[selectedWorkflow.id];
-    }
-  }
-
-  return {
-    migrated: true,
-    state: normalizeQuickSkillState({
-      ...state,
-      activeWorkflowId: selectedWorkflow?.id || null,
-      activeStageByWorkflow,
-      favorites: [...new Set([...state.favorites, ...preferences.favorites])],
-      recent: latestRecent(state.recent, preferences.recent),
-      legacyWebMigrationCompleted: true,
-    }),
-  };
 }
 
 export function applyQuickSkillOperation(current, operation, workflows = [], now = new Date()) {

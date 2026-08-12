@@ -1,27 +1,20 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 
-import { planToMarkdown } from "./exporter.mjs";
+import { AGENT_TARGET_IDS, listAgentTargets } from "./agent-targets.mjs";
 import { buildPlan, loadWorkflowTemplateForRequirement } from "./matcher.mjs";
-import {
-  compilePlaybookDraft,
-  loadPlaybookTemplate,
-  playbookTemplateContentHash,
-} from "./playbook-compiler.mjs";
-import { diffPlaybooks } from "./playbook-diff.mjs";
-import { normalizePlaybookInput, publicPlaybook } from "./playbook-model.mjs";
-import { renderPlaybookPdf } from "./playbook-pdf.mjs";
-import { renderPlaybookMarkdown } from "./playbook-renderer.mjs";
-import { bindSkillsToPlaybook } from "./playbook-skill-binder.mjs";
-import { projectBriefContentHash, seedProjectBrief } from "./project-brief-model.mjs";
 import { customSkillRoots, defaultSkillRoots } from "./roots.mjs";
 import { publicInventory, scanSkills } from "./scanner.mjs";
+import { compileSkillUsagePlan } from "./skill-plan.mjs";
+import { renderSkillPlanPdf } from "./skill-plan-pdf.mjs";
+import { renderSkillPlanMarkdown } from "./skill-plan-renderer.mjs";
 import { canonicalSkills, mergeSkillCopies, skillPreference } from "./skill-identity.mjs";
 import { decisionsForMatcher, workflowForMatcher } from "./workflow-model.mjs";
-import { WorkflowConflictError, WorkflowStore } from "./workflow-store.mjs";
+import { WorkflowStore } from "./workflow-store.mjs";
 
 const SCAN_MAX_BYTES = 512 * 1024;
 const CONTENT_MAX_CHARS = 128 * 1024;
+const DEFAULT_CURRENT_AGENT = "codex";
 
 function normalizeSearch(value) {
   return String(value || "").normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim();
@@ -97,62 +90,19 @@ function redactAssessmentPaths(plan) {
   return result;
 }
 
-function templateMigrationState(playbook, template) {
-  const targetContentHash = playbookTemplateContentHash(template);
-  const reasons = [];
-  if (playbook.source.templateId !== template.id) reasons.push("template-id-changed");
-  if (playbook.source.templateVersion !== template.version) reasons.push("template-version-changed");
-  if (!playbook.source.templateContentHash) reasons.push("template-fingerprint-missing");
-  else if (playbook.source.templateContentHash !== targetContentHash) reasons.push("template-content-changed");
-  return {
-    schemaVersion: "1",
-    workflowId: playbook.workflowId,
-    playbookId: playbook.id,
-    playbookRevision: playbook.revision,
-    playbookContentHash: playbook.contentHash,
-    currentTemplate: {
-      id: playbook.source.templateId,
-      version: playbook.source.templateVersion,
-      contentHash: playbook.source.templateContentHash || null,
-    },
-    targetTemplate: {
-      id: template.id,
-      version: template.version,
-      contentHash: targetContentHash,
-    },
-    migrationRequired: reasons.length > 0,
-    previewRequired: reasons.length > 0,
-    reasons,
-  };
-}
-
-function templateMigrationReviewHash(playbook) {
-  const assessment = playbook.skillBindingAssessment
-    ? { ...playbook.skillBindingAssessment, generatedAt: "review-time-excluded" }
-    : null;
-  return crypto.createHash("sha256").update(JSON.stringify({
-    title: playbook.title,
-    summary: playbook.summary,
-    audience: playbook.audience,
-    deliveryTarget: playbook.deliveryTarget,
-    goldenStack: playbook.goldenStack,
-    source: playbook.source,
-    skillBindingAssessment: assessment,
-    stages: playbook.stages,
-  })).digest("hex");
-}
-
 export class CatalogService {
   constructor({
     store = new WorkflowStore(),
     homeDirectory = process.env.CAPABILITY_ATLAS_HOME_DIR,
     projectRoot,
-    pdfRenderer = renderPlaybookPdf,
+    pdfRenderer = renderSkillPlanPdf,
+    currentAgent = process.env.CAPABILITY_ATLAS_CURRENT_AGENT || DEFAULT_CURRENT_AGENT,
   } = {}) {
     this.store = store;
     this.homeDirectory = homeDirectory;
     this.projectRoot = projectRoot;
     this.pdfRenderer = pdfRenderer;
+    this.currentAgent = AGENT_TARGET_IDS.includes(currentAgent) ? currentAgent : DEFAULT_CURRENT_AGENT;
     this.inventoryCache = new Map();
     this.scanPromises = new Map();
   }
@@ -195,12 +145,12 @@ export class CatalogService {
     const [inventory, persistence] = await Promise.all([this.inventory(), this.store.summary()]);
     return {
       name: "SkillMesh",
-      version: "0.7.0",
+      version: "0.9.0",
       skillFilesystem: "human-approved-managed-writes",
       networkSearch: true,
       externalSearch: {
         provider: "skills-cli",
-        installPerformed: "web-confirmed-plan-only",
+        installPerformed: "mcp-app-confirmed-plan-only",
         policy: "recorded-accepted-gap-candidates-only",
       },
       inventory: {
@@ -318,227 +268,90 @@ export class CatalogService {
       acceptanceCriteria,
       stages: template.stages,
     }, actor);
-    const projectBrief = await this.store.createProjectBrief(
-      workflow.id,
-      seedProjectBrief(workflow),
-      actor,
-    );
-    return { ...workflow, projectBrief };
+    return workflow;
   }
 
-  async createProjectBriefDraft(workflowId, input = {}, actor) {
-    const workflow = await this.store.getWorkflow(workflowId);
-    return this.store.createProjectBrief(workflowId, {
-      ...seedProjectBrief(workflow),
-      ...input,
-    }, actor);
-  }
-
-  async compileBoundPlaybook(workflow, projectBrief, depth = "auto") {
-    const [compiled, assessment] = await Promise.all([
-      compilePlaybookDraft({ workflow, projectBrief, depth }),
-      this.assessWorkflow(workflow.id, { includePaths: false }),
-    ]);
-    return bindSkillsToPlaybook({ playbook: compiled, assessment });
-  }
-
-  async projectBriefForPlaybook(workflowId, playbook) {
-    if (playbook.source?.projectBriefSnapshot) return structuredClone(playbook.source.projectBriefSnapshot);
-    if (playbook.source?.projectBriefVersion > 0) {
-      return (await this.store.getProjectBriefVersion(workflowId, playbook.source.projectBriefVersion)).snapshot;
-    }
-    return this.store.getProjectBrief(workflowId);
-  }
-
-  async playbookTemplateStatus(workflowId) {
-    const [playbook, template] = await Promise.all([
-      this.store.getPlaybook(workflowId),
-      loadPlaybookTemplate(),
-    ]);
-    return templateMigrationState(playbook, template);
-  }
-
-  async previewPlaybookTemplateMigration(workflowId) {
-    const [workflow, playbook, template] = await Promise.all([
+  async getSkillUsagePlan(workflowId, { refresh = true, targetAgents, currentAgent = this.currentAgent } = {}) {
+    const [workflow, inventory, availableTargets] = await Promise.all([
       this.store.getWorkflow(workflowId),
-      this.store.getPlaybook(workflowId),
-      loadPlaybookTemplate(),
+      this.inventory({ refresh }),
+      listAgentTargets({ ...(this.homeDirectory ? { homeDirectory: this.homeDirectory } : {}) }),
     ]);
-    const state = templateMigrationState(playbook, template);
-    const projectBrief = await this.projectBriefForPlaybook(workflowId, playbook);
-    const [generated, progress, verification] = await Promise.all([
-      this.compileBoundPlaybook(workflow, projectBrief, playbook.planningDepth || "full"),
-      this.store.getPlaybookProgress(workflowId),
-      this.store.getPlaybookVerification(workflowId),
+    const targetById = new Map(availableTargets.map((target) => [target.id, target]));
+    const knownCurrentAgent = targetById.has(currentAgent) ? currentAgent : null;
+    const defaultTargetAgent = knownCurrentAgent || this.currentAgent;
+    if (targetAgents !== undefined && (!Array.isArray(targetAgents) || !targetAgents.length)) {
+      throw new Error("install-targets-required");
+    }
+    const explicitTargets = targetAgents === undefined
+      ? null
+      : [...new Set(targetAgents.map((target) => String(target || "").trim()).filter(Boolean))];
+    if (explicitTargets && !explicitTargets.length) throw new Error("install-targets-required");
+    if (explicitTargets?.some((target) => !targetById.has(target))) {
+      throw new Error(`unknown-install-target:${explicitTargets.find((target) => !targetById.has(target))}`);
+    }
+    const workflowTargets = [...new Set((workflow.requirement?.targetAgents || [])
+      .map((target) => String(target || "").trim())
+      .filter((target) => targetById.has(target)))];
+    const selectedIds = explicitTargets || (workflowTargets.length ? workflowTargets : [defaultTargetAgent]);
+    const selectionSource = explicitTargets
+      ? "user"
+      : workflowTargets.length
+        ? "workflow"
+        : "current-host";
+    const matcherWorkflow = workflowForMatcher(workflow);
+    const common = {
+      goal: workflow.goal,
+      workflow: matcherWorkflow,
+      overrides: decisionsForMatcher(workflow),
+      validations: workflow.validations,
+      suggestions: workflow.suggestions,
+      externalCandidates: workflow.externalCandidates,
+      inventory,
+    };
+    const [globalAssessment, ...selectedAssessments] = await Promise.all([
+      buildPlan({ ...common, targetAgentIds: [] }),
+      ...selectedIds.map((targetAgent) => buildPlan({ ...common, targetAgentIds: [targetAgent] })),
     ]);
-    const previewPlaybook = publicPlaybook(normalizePlaybookInput({
-      ...generated,
-      id: playbook.id,
-      workflowId,
-      status: "draft",
-      verificationLevel: "agent-generated",
-      confirmedVersion: playbook.confirmedVersion,
-      baseConfirmationVersion: playbook.status === "confirmed"
-        ? playbook.confirmedVersion
-        : playbook.baseConfirmationVersion,
-      createdAt: playbook.createdAt,
-      createdBy: playbook.createdBy,
-      updatedBy: playbook.updatedBy,
-    }, {
-      id: playbook.id,
-      workflowId,
-      revision: playbook.revision + 1,
-      timestamps: { createdAt: playbook.createdAt, updatedAt: new Date().toISOString() },
-    }));
-    const diff = diffPlaybooks(previewPlaybook, playbook);
-    const contentChanges = previewPlaybook.contentHash !== playbook.contentHash;
-    return {
-      ...state,
-      previewContentHash: previewPlaybook.contentHash,
-      previewReviewHash: templateMigrationReviewHash(previewPlaybook),
-      previewPlaybook,
-      diff,
-      impact: {
-        contentChanges,
-        progressWouldBecomeStale: contentChanges && Boolean(progress.current),
-        progressRevision: progress.current?.revision || null,
-        verificationRecordsWouldBecomeStale: contentChanges ? verification.records.length : 0,
-        confirmedVersionPreserved: playbook.confirmedVersion || null,
-      },
+    const mappingScope = {
+      source: selectionSource,
+      currentAgent: knownCurrentAgent,
+      targetAgents: selectedIds.map((id) => {
+        const target = targetById.get(id);
+        return {
+          id,
+          label: target.label,
+          detected: target.detected,
+          current: id === knownCurrentAgent,
+          externalInstallSupported: target.externalInstallSupported,
+        };
+      }),
     };
+    return compileSkillUsagePlan({
+      workflow,
+      assessment: selectedAssessments[0],
+      targetAssessments: selectedIds.map((targetAgent, index) => ({
+        targetAgent: mappingScope.targetAgents[index],
+        assessment: selectedAssessments[index],
+      })),
+      globalAssessment,
+      mappingScope,
+    });
   }
 
-  async migratePlaybookTemplateDraft(workflowId, {
-    expectedRevision,
-    targetTemplateVersion,
-    targetTemplateContentHash,
-    previewReviewHash,
-  } = {}, actor) {
-    const preview = await this.previewPlaybookTemplateMigration(workflowId);
-    if (!preview.migrationRequired) throw new Error("playbook-template-current");
-    if (targetTemplateVersion !== preview.targetTemplate.version
-      || targetTemplateContentHash !== preview.targetTemplate.contentHash) {
-      throw new Error("playbook-template-target-changed");
-    }
-    if (!previewReviewHash || previewReviewHash !== preview.previewReviewHash) {
-      throw new Error("playbook-template-preview-hash-required");
-    }
-    return this.store.updatePlaybook(workflowId, {
-      expectedRevision,
-      patch: preview.previewPlaybook,
-    }, actor);
-  }
-
-  async generatePlaybookDraft(workflowId, { briefVersion, expectedRevision, depth } = {}, actor) {
-    const workflow = await this.store.getWorkflow(workflowId);
-    const projectBrief = briefVersion
-      ? (await this.store.getProjectBriefVersion(workflowId, briefVersion)).snapshot
-      : await this.store.getProjectBrief(workflowId);
-    let existing = null;
-    try {
-      existing = await this.store.getPlaybook(workflowId);
-    } catch (error) {
-      if (error.message !== "playbook-not-found") throw error;
-    }
-    if (existing) {
-      const template = await loadPlaybookTemplate();
-      if (templateMigrationState(existing, template).migrationRequired) {
-        throw new Error("playbook-template-migration-required");
-      }
-    }
-    const generated = await this.compileBoundPlaybook(workflow, projectBrief, depth || (briefVersion ? "full" : "auto"));
-    if (!existing) return this.store.createPlaybook(workflowId, generated, actor);
-    return this.store.updatePlaybook(workflowId, {
-      expectedRevision,
-      patch: generated,
-      replaceStages: true,
-    }, actor);
-  }
-
-  async lockExecutionBaseline(workflowId, {
-    expectedWorkflowRevision,
-    expectedBriefRevision,
-    expectedPlaybookRevision,
-    reviewedContentHash,
-  } = {}, actor) {
-    let [workflow, projectBrief, playbook] = await Promise.all([
-      this.store.getWorkflow(workflowId),
-      this.store.getProjectBrief(workflowId),
-      this.store.getPlaybook(workflowId),
-    ]);
-    if (workflow.revision !== Number(expectedWorkflowRevision)) throw new WorkflowConflictError(workflow.revision);
-    if (projectBrief.revision !== Number(expectedBriefRevision)) throw new WorkflowConflictError(projectBrief.revision);
-    if (playbook.revision !== Number(expectedPlaybookRevision)) throw new WorkflowConflictError(playbook.revision);
-    if (!reviewedContentHash || reviewedContentHash !== playbook.contentHash) throw new Error("playbook-review-hash-required");
-    if (playbook.source?.projectBriefContentHash
-      && playbook.source.projectBriefContentHash !== projectBriefContentHash(projectBrief)) {
-      throw new Error("playbook-brief-changed-regenerate-required");
-    }
-
-    const workflowPatch = {
-      scopeDescription: projectBrief.problemStatement,
-      nonGoals: projectBrief.outOfScope,
-      acceptanceCriteria: projectBrief.successCriteria,
-    };
-    const workflowChanged = workflow.scopeDescription !== workflowPatch.scopeDescription
-      || JSON.stringify(workflow.nonGoals || []) !== JSON.stringify(workflowPatch.nonGoals || [])
-      || JSON.stringify(workflow.acceptanceCriteria || []) !== JSON.stringify(workflowPatch.acceptanceCriteria || []);
-    if (workflowChanged) {
-      workflow = await this.store.updateWorkflow(workflowId, {
-        expectedRevision: workflow.revision,
-        patch: workflowPatch,
-      }, actor);
-    }
-    if (workflow.status !== "confirmed") {
-      workflow = await this.store.confirmWorkflow(workflowId, { expectedRevision: workflow.revision }, actor);
-    }
-    if (projectBrief.status !== "frozen") {
-      projectBrief = await this.store.freezeProjectBrief(workflowId, {
-        expectedRevision: projectBrief.revision,
-      }, actor);
-    }
-
-    const {
-      completeness: _completeness,
-      contentHash: _contentHash,
-      history: _history,
-      ...projectBriefSnapshot
-    } = projectBrief;
-    playbook = await this.store.updatePlaybook(workflowId, {
-      expectedRevision: playbook.revision,
-      patch: {
-        source: {
-          ...playbook.source,
-          projectBriefVersion: projectBrief.frozenVersion,
-          projectBriefRevision: projectBrief.revision,
-          projectBriefStatus: "frozen",
-          projectBriefContentHash: projectBriefContentHash(projectBrief),
-          projectBriefSnapshot,
-        },
-      },
-    }, actor);
-    playbook = await this.store.confirmPlaybook(workflowId, {
-      expectedRevision: playbook.revision,
-      reviewedContentHash: playbook.contentHash,
-    }, actor);
-    const progress = await this.store.startPlaybookProgress(workflowId, actor);
-    return { workflow, projectBrief, playbook, progress };
-  }
-
-  async exportPlaybook(workflowId, { format = "json" } = {}) {
-    const playbook = await this.store.getPlaybook(workflowId, { includeHistory: true });
-    const projectBrief = await this.projectBriefForPlaybook(workflowId, playbook);
-    const verification = await this.store.getPlaybookVerification(workflowId);
-    if (format === "markdown") return renderPlaybookMarkdown({ playbook, projectBrief, verification });
-    if (format === "pdf") return this.pdfRenderer({ playbook, projectBrief, verification });
-    if (format !== "json") throw new Error("playbook-export-format-invalid");
-    return {
-      kind: "capability-atlas-playbook",
-      schemaVersion: "1",
-      playbook,
-      projectBrief,
-      verification,
-    };
+  async exportSkillUsagePlan(workflowId, {
+    format = "json",
+    expectedContentHash = "",
+    targetAgents,
+    currentAgent = this.currentAgent,
+  } = {}) {
+    if (!expectedContentHash) throw new Error("skill-plan-content-hash-required");
+    const plan = await this.getSkillUsagePlan(workflowId, { refresh: true, targetAgents, currentAgent });
+    if (expectedContentHash !== plan.contentHash) throw new Error("skill-plan-changed");
+    if (format === "markdown") return renderSkillPlanMarkdown(plan);
+    if (format === "pdf") return this.pdfRenderer(plan);
+    if (format !== "json") throw new Error("skill-plan-export-format-invalid");
+    return { kind: "skillmesh-skill-usage-plan", schemaVersion: "1", plan };
   }
 
   async assessWorkflow(id, { refresh = false, includePaths = true, targetAgent = "" } = {}) {
@@ -646,8 +459,4 @@ export class CatalogService {
     };
   }
 
-  async exportWorkflow(id, { format = "json", includePaths = false } = {}) {
-    const assessment = await this.assessWorkflow(id, { includePaths });
-    return format === "markdown" ? planToMarkdown(assessment) : assessment;
-  }
 }

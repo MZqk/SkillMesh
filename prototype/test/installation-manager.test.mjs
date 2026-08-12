@@ -10,7 +10,7 @@ import { defaultSkillRoots } from "../lib/roots.mjs";
 import { scanSkills } from "../lib/scanner.mjs";
 import { WorkflowStore } from "../lib/workflow-store.mjs";
 
-const human = { type: "human", name: "fixture-user", channel: "web" };
+const human = { type: "human", name: "fixture-user", channel: "mcp-app" };
 
 function workflowInput(externalCandidates = []) {
   return {
@@ -324,6 +324,60 @@ test("isolates a newly managed local link when the post-install scan finds high 
   assert.match(item.quarantinePath, /quarantine/);
 });
 
+test("keeps medium-risk installs pending until the App records human warning acknowledgement", async (context) => {
+  const environment = await fixtureEnvironment(context);
+  const sourceDirectory = path.join(environment.root, "source", "warning-local");
+  const sourceSkillPath = path.join(sourceDirectory, "SKILL.md");
+  const contents = "---\nname: warning-local\ndescription: warning fixture\n---\nfixture\n";
+  await fs.mkdir(sourceDirectory, { recursive: true });
+  await fs.writeFile(sourceSkillPath, contents);
+  const contentHash = crypto.createHash("sha256").update(contents).digest("hex");
+  const assessment = assessmentForLocal({ sourceSkillPath, contentHash });
+  assessment.stages[0].candidates[0].name = "warning-local";
+  const store = new WorkflowStore({ filePath: path.join(environment.dataDirectory, "workspace.json") });
+  const workflow = await store.createWorkflow(workflowInput(), human);
+  const manager = new InstallationManager({
+    store,
+    service: fakeService(assessment, {
+      homeDirectory: environment.homeDirectory,
+      projectRoot: path.join(environment.root, "project"),
+    }),
+    securityScanner: async () => ({
+      status: "warning",
+      severity: "medium",
+      findings: [{ id: "fixture-medium", severity: "medium", message: "fixture", file: "SKILL.md" }],
+      filesScanned: 1,
+      bytesScanned: contents.length,
+      truncated: false,
+      scannedAt: new Date().toISOString(),
+    }),
+    ...environment,
+  });
+  const created = await manager.createPlan({
+    workflowId: workflow.id,
+    expectedRevision: workflow.revision,
+    targetAgents: ["codex"],
+  }, human);
+  await manager.executePlan({
+    workflowId: workflow.id,
+    planId: created.plan.id,
+    expectedRevision: created.workflow.revision,
+  }, human);
+  await manager.waitForIdle();
+  const pending = await store.getWorkflow(workflow.id);
+  assert.equal(pending.installationPlans[0].status, "partial");
+  assert.equal(pending.installationPlans[0].items[0].status, "installed-warning");
+  const acknowledged = await manager.acknowledgeWarnings({
+    workflowId: workflow.id,
+    planId: created.plan.id,
+    expectedRevision: pending.revision,
+    itemIds: [pending.installationPlans[0].items[0].id],
+  }, human);
+  assert.equal(acknowledged.plan.status, "completed");
+  assert.equal(acknowledged.plan.items[0].status, "installed");
+  assert.ok(acknowledged.plan.items[0].acknowledgements.includes("security-warning-reviewed"));
+});
+
 test("cancels a running external child operation and leaves no repair lock when cleanup succeeds", async (context) => {
   const environment = await fixtureEnvironment(context);
   const externalCandidate = {
@@ -393,5 +447,67 @@ test("cancels a running external child operation and leaves no repair lock when 
   const finished = await store.getWorkflow(workflow.id);
   assert.equal(finished.installationPlans[0].status, "cancelled");
   assert.equal(finished.installationPlans[0].items[0].status, "cancelled");
+  assert.equal((await manager.status()).needsRepair, false);
+});
+
+test("converts a stale global lock into an explicit repair state", async (context) => {
+  const environment = await fixtureEnvironment(context);
+  const store = new WorkflowStore({ filePath: path.join(environment.dataDirectory, "workspace.json") });
+  await store.initialize();
+  const lockPath = path.join(environment.dataDirectory, "installations", "global-job.lock");
+  await fs.mkdir(lockPath, { recursive: true });
+  await fs.writeFile(path.join(lockPath, "owner.json"), JSON.stringify({
+    pid: 2_147_483_647,
+    jobId: "stale-job",
+    workflowId: null,
+    planId: null,
+  }));
+  const manager = new InstallationManager({
+    store,
+    service: { inventoryCache: new Map() },
+    ...environment,
+  });
+  const status = await manager.status();
+  assert.equal(status.lockedByAnotherProcess, false);
+  assert.equal(status.needsRepair, true);
+  assert.equal(status.repair.reason, "interrupted-job");
+  await assert.rejects(fs.access(lockPath), /ENOENT/);
+  assert.deepEqual(await manager.resolveRepair({ action: "accept-current" }, human), {
+    status: "resolved",
+    action: "accept-current",
+  });
+  assert.equal((await manager.status()).needsRepair, false);
+});
+
+test("rolls back only owned residual paths from an interrupted installation", async (context) => {
+  const environment = await fixtureEnvironment(context);
+  const store = new WorkflowStore({ filePath: path.join(environment.dataDirectory, "workspace.json") });
+  await store.initialize();
+  const installationDirectory = path.join(environment.dataDirectory, "installations");
+  const residual = path.join(environment.homeDirectory, ".agents", "skills", "owned-residual");
+  const unowned = path.join(environment.homeDirectory, ".agents", "skills", "unowned-residual");
+  await fs.mkdir(residual, { recursive: true });
+  await fs.mkdir(unowned, { recursive: true });
+  await fs.mkdir(installationDirectory, { recursive: true });
+  await fs.writeFile(path.join(installationDirectory, "ownership.json"), JSON.stringify({
+    [residual]: { itemId: "owned-item", jobId: "interrupted" },
+  }));
+  await fs.writeFile(path.join(installationDirectory, "needs-repair.json"), JSON.stringify({
+    reason: "cleanup-failed",
+    workflowId: null,
+    planId: null,
+    residualPaths: [residual, unowned],
+  }));
+  const manager = new InstallationManager({
+    store,
+    service: { inventoryCache: new Map() },
+    ...environment,
+  });
+  assert.deepEqual(await manager.resolveRepair({ action: "rollback" }, human), {
+    status: "resolved",
+    action: "rollback",
+  });
+  await assert.rejects(fs.access(residual), /ENOENT/);
+  await fs.access(unowned);
   assert.equal((await manager.status()).needsRepair, false);
 });

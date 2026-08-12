@@ -368,11 +368,14 @@ export async function buildPlan({
   suggestions = [],
   externalCandidates = [],
   targetAgent = "",
+  targetAgentIds,
 }) {
   const workflow = workflowInput || await loadWorkflowTemplateForRequirement({ goal });
   const trimmedGoal = String(goal || workflow.goal || "交付一个可验证结果").trim();
   const requirement = workflow.requirement || {};
-  const targetAgents = [...new Set([targetAgent, ...(requirement.targetAgents || [])].filter(Boolean))];
+  const targetAgents = Array.isArray(targetAgentIds)
+    ? [...new Set(targetAgentIds.filter(Boolean))]
+    : [...new Set([targetAgent, ...(requirement.targetAgents || [])].filter(Boolean))];
   const context = {
     goal: trimmedGoal,
     scopeDescription: workflow.scopeDescription || workflow.description || "",

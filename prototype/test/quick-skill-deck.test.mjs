@@ -4,13 +4,10 @@ import test from "node:test";
 import {
   buildQuickDeckSections,
   buildSkillHandoff,
-  buildTargetAgentOptions,
-  loadQuickDeckPreferences,
   normalizeQuickDeckPreferences,
   recordQuickUse,
-  resolveActivePlaybookStage,
-  toggleQuickFavorite,
-} from "../public/quick-skill-deck.js";
+  resolveSkillPlanStage,
+} from "../lib/quick-skill-deck.mjs";
 
 function skill(contentHash, name = contentHash, extra = {}) {
   return {
@@ -24,10 +21,7 @@ function skill(contentHash, name = contentHash, extra = {}) {
   };
 }
 
-test("quick deck preferences tolerate corrupt storage and keep bounded unique history", () => {
-  const storage = { getItem: () => "{broken" };
-  assert.deepEqual(loadQuickDeckPreferences(storage), { schemaVersion: "1", favorites: [], recent: [] });
-
+test("quick deck preferences keep bounded unique server-side history", () => {
   const preferences = normalizeQuickDeckPreferences({
     favorites: ["a", "a", "b"],
     recent: [
@@ -38,53 +32,47 @@ test("quick deck preferences tolerate corrupt storage and keep bounded unique hi
   });
   assert.deepEqual(preferences.favorites, ["a", "b"]);
   assert.deepEqual(preferences.recent.map((item) => item.contentHash), ["b", "a"]);
-  assert.deepEqual(toggleQuickFavorite(preferences, "a").favorites, ["b"]);
   assert.equal(recordQuickUse(preferences, "c", "2026-03-01T00:00:00Z").recent[0].contentHash, "c");
 });
 
-test("active stage follows progress gates and dependencies", () => {
-  const playbook = {
+test("selected workflow stages map back to their compressed Skill plan group", () => {
+  const skillPlan = {
     stages: [
-      { id: "discover", applicability: "required", dependencies: [] },
-      { id: "build", applicability: "required", dependencies: ["discover"] },
-      { id: "optional", applicability: "not-applicable", dependencies: [] },
+      { id: "quick-1", sourceStageIds: ["discover", "define"] },
+      { id: "quick-2", sourceStageIds: ["build", "review"] },
     ],
   };
-  assert.equal(resolveActivePlaybookStage(playbook, null).id, "discover");
-  assert.equal(resolveActivePlaybookStage(playbook, {
-    current: { gates: [{ stageId: "discover", status: "passed" }] },
-  }).id, "build");
-  assert.equal(resolveActivePlaybookStage(playbook, {
-    current: { gates: [{ stageId: "discover", status: "passed" }, { stageId: "build", status: "passed" }] },
-  }), null);
+  assert.equal(resolveSkillPlanStage(skillPlan, "review").id, "quick-2");
+  assert.equal(resolveSkillPlanStage(skillPlan, "quick-1").id, "quick-1");
+  assert.equal(resolveSkillPlanStage(skillPlan, "unknown").id, "quick-1");
 });
 
 test("deck shows only bounded current, favorite, and recent cards with priority deduplication", () => {
   const skills = Array.from({ length: 15 }, (_, index) => skill(`h${index}`, `Skill ${index}`));
-  const playbook = {
+  const skillPlan = {
     stages: [{
       id: "build",
       title: "构建",
-      applicability: "required",
-      dependencies: [],
-      steps: Array.from({ length: 8 }, (_, index) => ({
-        id: `s${index}`,
-        title: `步骤 ${index}`,
+      sourceStageIds: ["source-build"],
+      cards: Array.from({ length: 8 }, (_, index) => ({
+        stepId: `s${index}`,
+        stepTitle: `步骤 ${index}`,
         objective: `完成步骤 ${index}`,
-        expectedOutputs: [`产物 ${index}`],
-        acceptanceCriteria: [`验收 ${index}`],
-        skillBindings: [{
+        completionCriteria: [`验收 ${index}`],
+        primary: {
           contentHash: `h${index}`,
-          role: index === 0 ? "primary" : "alternative",
-          reviewStatus: index === 0 ? "confirmed" : "suggested",
+          role: "primary",
+          reviewStatus: "confirmed",
           rationale: "相关",
-        }],
+        },
+        alternatives: [],
       })),
     }],
   };
   const sections = buildQuickDeckSections({
     skills,
-    playbook,
+    skillPlan,
+    selectedStageId: "source-build",
     preferences: {
       favorites: ["h0", "h8", "h9", "h10", "h11", "h12"],
       recent: ["h8", "h9", "h13", "h14"].map((contentHash, index) => ({ contentHash, usedAt: `2026-01-0${index + 1}T00:00:00Z` })),
@@ -98,7 +86,7 @@ test("deck shows only bounded current, favorite, and recent cards with priority 
   assert.ok(sections.totalHidden > 0);
 });
 
-test("deck falls back to the selected map stage when no playbook is available", () => {
+test("deck falls back to the selected map stage when no Skill plan is available", () => {
   const sections = buildQuickDeckSections({
     skills: [skill("research", "Research")],
     plan: {
@@ -118,39 +106,6 @@ test("deck falls back to the selected map stage when no playbook is available", 
   assert.deepEqual(sections.current.items[0].expectedOutputs, ["研究结论"]);
 });
 
-test("a completed playbook does not fall back to a stale selected map stage", () => {
-  const playbook = {
-    stages: [{ id: "done", title: "完成", applicability: "required", dependencies: [], steps: [] }],
-  };
-  const sections = buildQuickDeckSections({
-    skills: [skill("research", "Research")],
-    playbook,
-    progress: { current: { gates: [{ stageId: "done", status: "passed" }] } },
-    plan: {
-      stages: [{
-        id: "old",
-        title: "旧选择",
-        candidates: [{ contentHash: "research", decision: "confirmed" }],
-      }],
-    },
-    selectedStageId: "old",
-  });
-  assert.equal(sections.context.stageTitle, "执行方案已完成");
-  assert.equal(sections.current.items.length, 0);
-});
-
-test("target options lead with current Agent and filter declared compatibility", () => {
-  const options = buildTargetAgentOptions({
-    skill: skill("h", "Review", { supportedAgents: ["codex"] }),
-    targets: [
-      { id: "claude", label: "Claude Code", detected: true },
-      { id: "codex", label: "Codex", detected: false },
-    ],
-    preferredTargetAgents: ["codex"],
-  });
-  assert.deepEqual(options.map((option) => option.value), ["current", "codex"]);
-});
-
 test("handoff includes task, target, outputs, and stage context without leaking local paths", () => {
   const prompt = buildSkillHandoff({
     skill: { name: "review", invocation: "/review", path: "/Users/private/SKILL.md", content: "secret" },
@@ -162,6 +117,7 @@ test("handoff includes task, target, outputs, and stage context without leaking 
       stageTitle: "质量审查",
       stepTitle: "检查变更",
       acceptanceCriteria: ["高风险问题已列出"],
+      contentHash: "a".repeat(64),
     },
   });
   assert.match(prompt, /检查登录流程/);
@@ -169,6 +125,8 @@ test("handoff includes task, target, outputs, and stage context without leaking 
   assert.match(prompt, /审查报告/);
   assert.match(prompt, /质量审查/);
   assert.match(prompt, /\/review/);
+  for (const label of ["工作流", "阶段", "步骤", "主 Skill", "调用方式", "完成尺度", "contentHash"]) assert.match(prompt, new RegExp(label));
+  assert.match(prompt, /a{64}/);
   assert.doesNotMatch(prompt, /\/Users\/private/);
   assert.doesNotMatch(prompt, /secret/);
 });

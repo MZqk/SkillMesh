@@ -8,14 +8,13 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-import { loadWorkflowTemplate } from "../lib/matcher.mjs";
-import { QUICK_SKILL_WIDGET_URI } from "../mcp-server.mjs";
-import { WorkflowStore } from "../lib/workflow-store.mjs";
+import { SKILLMESH_APP_URI } from "../mcp-server.mjs";
 
 const SERVER_PATH = path.resolve(import.meta.dirname, "../mcp-server.mjs");
 
 function output(result) {
-  return JSON.parse(result.content.find((item) => item.type === "text").text);
+  const block = result.content?.find((item) => item.type === "text");
+  return result.structuredContent || JSON.parse(block.text);
 }
 
 async function availablePort() {
@@ -25,366 +24,200 @@ async function availablePort() {
     server.listen(0, "127.0.0.1", resolve);
   });
   const address = server.address();
-  const port = typeof address === "object" && address ? address.port : 0;
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  return port;
+  return address.port;
 }
 
-async function waitUntilUnavailable(url) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    try {
-      await fetch(`${url}/api/health`);
-    } catch {
-      return true;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  return false;
+async function portIsClosed(port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    socket.once("connect", () => { socket.destroy(); resolve(false); });
+    socket.once("error", () => resolve(true));
+    socket.setTimeout(500, () => { socket.destroy(); resolve(true); });
+  });
 }
 
-test("auto-starts the Web child with real stdio MCP tools without exposing human-only actions", async (context) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "capability-atlas-mcp-"));
+test("publishes one native workbench and App-only human actions without starting HTTP", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "skillmesh-mcp-app-"));
   context.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const seedStore = new WorkflowStore({ filePath: path.join(directory, "workspace.json") });
-  const template = await loadWorkflowTemplate();
-  const seed = await seedStore.createWorkflow({
-    goal: "历史工作流",
-    scopeDescription: "供 MCP 读取确认快照。",
-    nonGoals: ["不允许 Agent 确认"],
-    acceptanceCriteria: ["可以读取 v1"],
-    stages: template.stages.slice(0, 1),
-  }, { type: "human", name: "fixture-user", channel: "web" });
-  await seedStore.confirmWorkflow(seed.id, { expectedRevision: seed.revision }, { type: "human", name: "fixture-user", channel: "web" });
-  const webPort = await availablePort();
-  const autoStartedUrl = `http://127.0.0.1:${webPort}`;
-  const client = new Client({ name: "fixture-mcp-agent", version: "1.2.3" });
+  const home = path.join(directory, "home");
+  const skillRoot = path.join(home, ".workbuddy", "skills", "requirements-guide");
+  await fs.mkdir(skillRoot, { recursive: true });
+  await fs.writeFile(path.join(skillRoot, "SKILL.md"), [
+    "---",
+    "name: requirements-guide",
+    "description: Clarify requirements and acceptance criteria for delivery workflows.",
+    "supported-agents: [workbuddy]",
+    "---",
+    "# Requirements Guide",
+  ].join("\n"));
+  const unusedPort = await availablePort();
+  const client = new Client({ name: "WorkBuddy", version: "5.3.11" });
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [SERVER_PATH],
     env: {
       ...process.env,
-      CAPABILITY_ATLAS_DATA_DIR: directory,
-      CAPABILITY_ATLAS_WEB_PORT: String(webPort),
-      CAPABILITY_ATLAS_HOME_DIR: path.join(directory, "home"),
+      CAPABILITY_ATLAS_DATA_DIR: path.join(directory, "data"),
+      CAPABILITY_ATLAS_HOME_DIR: home,
+      CAPABILITY_ATLAS_WEB_PORT: String(unusedPort),
+      CAPABILITY_ATLAS_WEB_AUTOSTART: "1",
     },
     stderr: "pipe",
   });
   await client.connect(transport);
-  let clientClosed = false;
-  context.after(async () => {
-    if (!clientClosed) await client.close();
-  });
+  let closed = false;
+  context.after(async () => { if (!closed) await client.close(); });
 
-  const autoStartedHealth = await (await fetch(`${autoStartedUrl}/api/health`)).json();
-  assert.equal(autoStartedHealth.app, "capability-atlas");
-  assert.equal(autoStartedHealth.ok, true);
+  assert.equal(await portIsClosed(unusedPort), true);
 
   const listed = await client.listTools();
-  const names = listed.tools.map((tool) => tool.name);
-  assert.ok(names.includes("search_skills"));
-  assert.ok(names.includes("get_quick_skill_deck"));
-  assert.ok(names.includes("open_skillmesh_widget"));
-  assert.ok(names.includes("update_quick_skill_state"));
-  assert.ok(names.includes("create_workflow_draft"));
-  assert.ok(names.includes("create_requirement_workflow_draft"));
-  assert.ok(names.includes("find_external_skills"));
-  assert.ok(names.includes("record_external_skill_candidate"));
-  assert.ok(names.includes("assess_workflow"));
-  assert.ok(names.includes("get_workflow_version"));
-  assert.ok(names.includes("get_project_brief"));
-  assert.ok(names.includes("get_project_brief_version"));
-  assert.ok(names.includes("create_project_brief_draft"));
-  assert.ok(names.includes("update_project_brief_draft"));
-  assert.ok(names.includes("generate_playbook_draft"));
-  assert.ok(names.includes("get_playbook"));
-  assert.ok(names.includes("get_playbook_version"));
-  assert.ok(names.includes("get_playbook_diff"));
-  assert.ok(names.includes("get_playbook_template_status"));
-  assert.ok(names.includes("preview_playbook_template_migration"));
-  assert.ok(names.includes("migrate_playbook_template_draft"));
-  assert.ok(names.includes("export_playbook"));
-  assert.ok(names.includes("get_playbook_progress"));
-  assert.ok(names.includes("get_playbook_verification"));
-  assert.ok(names.includes("get_skill_content"));
-  assert.ok(names.includes("open_web_ui"));
-  assert.ok(names.includes("propose_skill_installation_plan"));
-  assert.ok(names.includes("get_skill_installation_status"));
-  assert.equal(names.includes("execute_skill_installation_plan"), false);
-  assert.equal(names.includes("confirm_workflow"), false);
-  assert.equal(names.includes("freeze_project_brief"), false);
-  assert.equal(names.includes("confirm_playbook"), false);
-  assert.equal(names.includes("update_playbook_progress"), false);
-  assert.equal(names.includes("verify_playbook"), false);
+  const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
+  assert.equal(byName.get("open_skillmesh")._meta.ui.resourceUri, SKILLMESH_APP_URI);
+  assert.deepEqual(byName.get("open_skillmesh")._meta.ui.visibility, ["model"]);
+  assert.equal(Object.keys(byName.get("open_skillmesh")._meta).some((key) => key.startsWith("openai/")), false);
+  for (const name of [
+    "get_skillmesh_app_snapshot",
+    "review_skill_match",
+    "record_skill_validation",
+    "update_workflow_confirmation_fields",
+    "confirm_workflow",
+    "update_skillmesh_preferences",
+    "update_skill_roots",
+    "configure_skill_installation_plan",
+    "execute_skill_installation_plan",
+    "cancel_skill_installation_job",
+    "acknowledge_skill_installation_warnings",
+    "quarantine_skill_installation_item",
+    "resolve_skill_installation_repair",
+    "prepare_skill_usage_plan_export",
+  ]) {
+    assert.deepEqual(byName.get(name)?._meta?.ui?.visibility, ["app"], name);
+    assert.equal(byName.get(name)?._meta?.ui?.resourceUri, SKILLMESH_APP_URI, name);
+  }
+  for (const removed of ["open_web_ui", "open_skillmesh_widget", "get_quick_skill_deck", "update_quick_skill_state", "export_workflow"]) {
+    assert.equal(byName.has(removed), false, removed);
+  }
+  assert.ok(byName.has("search_skills"));
+  assert.ok(byName.has("create_requirement_workflow_draft"));
+  assert.ok(byName.has("get_skill_usage_plan"));
+  assert.ok(byName.has("propose_skill_installation_plan"));
 
-  const widgetTool = listed.tools.find((tool) => tool.name === "open_skillmesh_widget");
-  assert.equal(widgetTool._meta.ui.resourceUri, QUICK_SKILL_WIDGET_URI);
-  assert.equal(widgetTool._meta["openai/outputTemplate"], QUICK_SKILL_WIDGET_URI);
   const resources = await client.listResources();
-  const widgetResource = resources.resources.find((resource) => resource.uri === QUICK_SKILL_WIDGET_URI);
-  assert.equal(widgetResource.mimeType, "text/html;profile=mcp-app");
-  const widget = await client.readResource({ uri: QUICK_SKILL_WIDGET_URI });
-  assert.equal(widget.contents[0].mimeType, "text/html;profile=mcp-app");
-  assert.match(widget.contents[0].text, /SkillMesh 快速使用/);
-  assert.equal(widget.contents[0]._meta.ui.csp.connectDomains.length, 0);
-  assert.equal(widget.contents[0]._meta.ui.csp.resourceDomains.length, 0);
+  assert.deepEqual(resources.resources.map((resource) => resource.uri), [SKILLMESH_APP_URI]);
+  const resource = await client.readResource({ uri: SKILLMESH_APP_URI });
+  const html = resource.contents[0];
+  assert.equal(html.mimeType, "text/html;profile=mcp-app");
+  assert.match(html.text, /把 Skill 放回工作流/);
+  assert.match(html.text, /快速使用/);
+  assert.equal(html._meta.ui.csp.connectDomains.length, 0);
+  assert.equal(html._meta.ui.csp.resourceDomains.length, 0);
+  assert.equal(Object.keys(html._meta).some((key) => key.startsWith("openai/")), false);
 
-  const quickDeckResult = await client.callTool({ name: "get_quick_skill_deck", arguments: {} });
-  assert.match(quickDeckResult.content[0].text, /当前 Codex/);
-  assert.ok(quickDeckResult.structuredContent.sections.totalVisible <= 14);
-  const openedWidget = await client.callTool({ name: "open_skillmesh_widget", arguments: {} });
-  assert.equal(openedWidget.structuredContent.preferenceRevision, quickDeckResult.structuredContent.preferenceRevision);
-  const favoriteState = output(await client.callTool({
-    name: "update_quick_skill_state",
+  const created = output(await client.callTool({
+    name: "create_workflow_draft",
     arguments: {
-      expectedRevision: quickDeckResult.structuredContent.preferenceRevision,
-      operation: { type: "set-favorite", contentHash: "fixture-hash", favorite: true },
+      goal: "澄清并交付一个功能需求",
+      scopeDescription: "由本机 Agent 完成结构化需求交付。",
+      nonGoals: ["不扩大需求范围"],
+      acceptanceCriteria: ["需求与验收条件可观察"],
+      requirement: { targetAgents: ["workbuddy"], riskLevel: "low" },
+      stages: [{
+        id: "clarify",
+        phase: "定义",
+        title: "澄清需求",
+        capabilities: [{ id: "requirements", label: "需求澄清", terms: ["requirements", "acceptance criteria"] }],
+      }],
     },
   }));
-  assert.equal(favoriteState.favorites[0], "fixture-hash");
-  const recentState = output(await client.callTool({
-    name: "update_quick_skill_state",
+  const assessment = output(await client.callTool({ name: "assess_workflow", arguments: { id: created.id, refresh: true, targetAgent: "workbuddy" } }));
+  const candidate = assessment.stages[0].candidates.find((item) => item.name === "requirements-guide");
+  assert.ok(candidate);
+
+  const opened = await client.callTool({
+    name: "open_skillmesh",
+    arguments: { workflowId: created.id, stageId: "clarify", targetAgents: ["workbuddy"] },
+  });
+  assert.match(opened.content[0].text, /当前宿主 WorkBuddy/);
+  assert.equal(opened.structuredContent.host.id, "workbuddy");
+  assert.equal(opened.structuredContent.featurePolicy.readOnly, false);
+  assert.equal(opened.structuredContent.workflows.activeId, created.id);
+  assert.equal(opened.structuredContent.skillPlan.mappingScope.currentAgent, "workbuddy");
+  assert.equal(opened.structuredContent.quickUse.targetAgent.id, "workbuddy");
+
+  const reviewed = output(await client.callTool({
+    name: "review_skill_match",
     arguments: {
-      expectedRevision: favoriteState.revision,
-      operation: { type: "record-use", contentHash: "fixture-hash" },
+      kind: "local",
+      workflowId: created.id,
+      expectedRevision: created.revision,
+      stageId: "clarify",
+      contentHash: candidate.contentHash,
+      decision: "confirmed",
+      rationale: "用户在原生 App 中确认了强证据。",
     },
   }));
-  assert.equal(recentState.recent[0].contentHash, "fixture-hash");
-  const quickStateConflict = await client.callTool({
-    name: "update_quick_skill_state",
+  assert.equal(reviewed.reviews.clarify[candidate.contentHash].actor.type, "human");
+  assert.equal(reviewed.reviews.clarify[candidate.contentHash].actor.channel, "mcp-app");
+
+  const validated = output(await client.callTool({
+    name: "record_skill_validation",
     arguments: {
-      expectedRevision: favoriteState.revision,
-      operation: { type: "set-favorite", contentHash: "fixture-hash", favorite: false },
+      workflowId: created.id,
+      expectedRevision: reviewed.revision,
+      contentHash: candidate.contentHash,
+      agent: "WorkBuddy",
+      environment: "fixture macOS",
+      notes: "人工运行并观察到预期输出。",
     },
+  }));
+  assert.equal(validated.validations[candidate.contentHash].actor.channel, "mcp-app");
+
+  const confirmed = output(await client.callTool({
+    name: "confirm_workflow",
+    arguments: { workflowId: created.id, expectedRevision: validated.revision },
+  }));
+  assert.equal(confirmed.status, "confirmed");
+  assert.equal(confirmed.confirmedBy.type, "human");
+  assert.equal(confirmed.confirmedBy.channel, "mcp-app");
+
+  const currentPlan = output(await client.callTool({
+    name: "get_skill_usage_plan",
+    arguments: { workflowId: created.id, targetAgents: ["workbuddy"] },
+  }));
+  assert.equal(currentPlan.contentHash.length, 64);
+  const exported = output(await client.callTool({
+    name: "prepare_skill_usage_plan_export",
+    arguments: {
+      workflowId: created.id,
+      targetAgents: ["workbuddy"],
+      contentHash: currentPlan.contentHash,
+      format: "markdown",
+    },
+  }));
+  assert.equal(exported.filename, "skill-usage-plan.md");
+  assert.equal(exported.contentHash, currentPlan.contentHash);
+  assert.match(exported.text, /Skill 使用方案/);
+
+  const settings = opened.structuredContent.settings;
+  const updatedSettings = output(await client.callTool({
+    name: "update_skill_roots",
+    arguments: { expectedRevision: settings.revision, customRoots: [path.join(directory, "extra-skills")] },
+  }));
+  assert.equal(updatedSettings.revision, settings.revision + 1);
+  const staleSettings = await client.callTool({
+    name: "update_skill_roots",
+    arguments: { expectedRevision: settings.revision, customRoots: [] },
   });
-  assert.equal(quickStateConflict.isError, true);
-  assert.match(quickStateConflict.content[0].text, /quick-skill-state-conflict/);
-  const webQuickState = await (await fetch(`${autoStartedUrl}/api/quick-skill-state`)).json();
-  assert.equal(webQuickState.revision, recentState.revision);
-  assert.equal(webQuickState.favorites.includes("fixture-hash"), true);
-  const webFavoriteResponse = await fetch(`${autoStartedUrl}/api/quick-skill-state`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      expectedRevision: webQuickState.revision,
-      operation: { type: "set-favorite", contentHash: "fixture-hash", favorite: false },
-    }),
-  });
-  assert.equal(webFavoriteResponse.status, 200);
-  const refreshedDeck = await client.callTool({ name: "get_quick_skill_deck", arguments: {} });
-  assert.equal(refreshedDeck.structuredContent.state.favorites.includes("fixture-hash"), false);
-  assert.equal(refreshedDeck.structuredContent.state.recent[0].contentHash, "fixture-hash");
+  assert.equal(staleSettings.isError, true);
+  assert.match(staleSettings.content[0].text, /settings-revision-conflict/);
 
   const prompts = await client.listPrompts();
   assert.ok(prompts.prompts.some((prompt) => prompt.name === "map_requirement_to_workflow"));
-  const mappedPrompt = await client.getPrompt({
-    name: "map_requirement_to_workflow",
-    arguments: { goal: "开发 Android 应用", targetPlatforms: "Android" },
-  });
-  assert.match(mappedPrompt.messages[0].content.text, /create_requirement_workflow_draft/);
-  assert.match(mappedPrompt.messages[0].content.text, /update_project_brief_draft/);
-  assert.match(mappedPrompt.messages[0].content.text, /generate_playbook_draft/);
-  assert.match(mappedPrompt.messages[0].content.text, /find_external_skills/);
-
-  const opened = output(await client.callTool({
-    name: "open_web_ui",
-    arguments: { openBrowser: false },
-  }));
-  assert.equal(opened.ok, true);
-  assert.equal(opened.status, "already-running");
-  assert.equal(opened.lifecycle, "mcp-session");
-  assert.equal(opened.browserOpened, false);
-  assert.equal(opened.url, autoStartedUrl);
-
-  const reopened = output(await client.callTool({
-    name: "open_web_ui",
-    arguments: { openBrowser: false },
-  }));
-  assert.equal(reopened.status, "already-running");
-  assert.equal(reopened.url, opened.url);
-
-  const confirmedVersion = output(await client.callTool({
-    name: "get_workflow_version",
-    arguments: { id: seed.id, version: 1 },
-  }));
-  assert.equal(confirmedVersion.snapshot.goal, "历史工作流");
-  assert.equal(confirmedVersion.snapshot.confirmedBy.type, "human");
-
-  const createdResult = await client.callTool({
-    name: "create_workflow_draft",
-    arguments: {
-      goal: "实现 MCP 工作流缺口地图",
-      scopeDescription: "由 Agent 提案、人工定稿。",
-      nonGoals: ["不修改 Skill 文件"],
-      acceptanceCriteria: ["Agent 可以写入草案"],
-      stages: [{
-        id: "design",
-        phase: "定义",
-        title: "定义能力",
-        capabilities: [{ id: "requirements", label: "需求拆解", terms: ["requirements"] }],
-      }],
-    },
-  });
-  assert.equal(createdResult.isError, undefined);
-  const created = output(createdResult);
-  assert.equal(created.createdBy.name, "fixture-mcp-agent");
-  assert.equal(created.createdBy.type, "agent");
-  assert.equal(created.status, "draft");
-
-  const fetched = output(await client.callTool({
-    name: "get_workflow",
-    arguments: { id: created.id },
-  }));
-  assert.equal(fetched.revision, 1);
-  assert.equal(fetched.history.length, 0);
-
-  const updated = output(await client.callTool({
-    name: "update_workflow_draft",
-    arguments: {
-      id: created.id,
-      expectedRevision: 1,
-      patch: { goal: "实现可持久化的 MCP 工作流缺口地图" },
-    },
-  }));
-  assert.equal(updated.revision, 2);
-  assert.match(updated.goal, /持久化/);
-
-  const recorded = output(await client.callTool({
-    name: "record_external_skill_candidate",
-    arguments: {
-      id: created.id,
-      expectedRevision: 2,
-      stageId: "design",
-      capabilityId: "requirements",
-      query: "requirements workflow",
-      packageId: "example/skills@requirements",
-      sourceUrl: "https://skills.sh/example/skills/requirements",
-      rationale: "补齐本机缺口，安装前仍需审查。",
-      status: "accepted",
-    },
-  }));
-  assert.equal(recorded.revision, 3);
-  assert.equal(recorded.externalCandidates[0].packageId, "example/skills@requirements");
-  assert.equal(recorded.externalCandidates[0].status, "suggested");
-
-  const proposedInstall = output(await client.callTool({
-    name: "propose_skill_installation_plan",
-    arguments: {
-      id: created.id,
-      expectedRevision: recorded.revision,
-      targetAgents: ["codex"],
-    },
-  }));
-  assert.equal(proposedInstall.executionAllowed, false);
-  assert.equal(proposedInstall.plan.items.length, 0);
-  assert.ok(proposedInstall.plan.coverage.uncovered.length > 0);
-  assert.equal("sharedRoot" in proposedInstall.plan, false);
-
-  const androidDraft = output(await client.callTool({
-    name: "create_requirement_workflow_draft",
-    arguments: {
-      goal: "开发 Android 应用",
-      requirement: { targetPlatforms: ["Android"], preferredStack: ["Kotlin", "Jetpack Compose"] },
-    },
-  }));
-  assert.equal(androidDraft.stages[0].id, "frame-android-requirement");
-  assert.equal(androidDraft.projectBrief.status, "draft");
-  assert.equal(androidDraft.projectBrief.completeness.complete, true);
-
-  const completedBrief = output(await client.callTool({
-    name: "update_project_brief_draft",
-    arguments: {
-      workflowId: androidDraft.id,
-      expectedRevision: androidDraft.projectBrief.revision,
-      patch: {
-        targetUsers: ["Android 手机用户"],
-        primaryOutcome: "用户能完成应用主任务",
-        inScope: ["端到端主流程"],
-        outOfScope: ["平板专用布局"],
-        constraints: ["首版仅支持 Android"],
-        successCriteria: ["主流程在真机验收通过"],
-      },
-    },
-  }));
-  assert.equal(completedBrief.completeness.complete, true);
-  assert.equal(completedBrief.completeness.nextQuestion, null);
-
-  const frozenBriefResponse = await fetch(`${autoStartedUrl}/api/workflows/${androidDraft.id}/brief/freeze`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ expectedRevision: completedBrief.revision }),
-  });
-  const frozenBrief = await frozenBriefResponse.json();
-  assert.equal(frozenBriefResponse.status, 200);
-  assert.equal(frozenBrief.status, "frozen");
-  const frozenBriefVersion = output(await client.callTool({
-    name: "get_project_brief_version",
-    arguments: { workflowId: androidDraft.id, version: 1 },
-  }));
-  assert.equal(frozenBriefVersion.snapshot.frozenBy.type, "human");
-
-  const playbook = output(await client.callTool({
-    name: "generate_playbook_draft",
-    arguments: { workflowId: androidDraft.id, briefVersion: 1 },
-  }));
-  assert.equal(playbook.status, "draft");
-  assert.equal(playbook.stages.every((stage) => stage.steps[0].execution.autoExecutionAllowed === false), true);
-  assert.equal(playbook.source.projectBriefVersion, 1);
-  const templateStatus = output(await client.callTool({
-    name: "get_playbook_template_status",
-    arguments: { workflowId: androidDraft.id },
-  }));
-  assert.equal(templateStatus.migrationRequired, false);
-  assert.equal(templateStatus.currentTemplate.contentHash.length, 64);
-
-  const confirmedPlaybookResponse = await fetch(`${autoStartedUrl}/api/workflows/${androidDraft.id}/playbook/confirm`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ expectedRevision: playbook.revision, reviewedContentHash: playbook.contentHash }),
-  });
-  const confirmedPlaybook = await confirmedPlaybookResponse.json();
-  assert.equal(confirmedPlaybookResponse.status, 200);
-  assert.equal(confirmedPlaybook.verificationLevel, "maintainer-reviewed");
-  const playbookVersion = output(await client.callTool({
-    name: "get_playbook_version",
-    arguments: { workflowId: androidDraft.id, version: 1 },
-  }));
-  assert.equal(playbookVersion.snapshot.confirmedBy.type, "human");
-  const handbook = output(await client.callTool({
-    name: "export_playbook",
-    arguments: { workflowId: androidDraft.id, format: "markdown" },
-  }));
-  assert.match(handbook.markdown, /从 0 到 1 执行方案/);
-  assert.match(handbook.markdown, new RegExp(confirmedPlaybook.contentHash));
-  const startedProgressResponse = await fetch(`${autoStartedUrl}/api/workflows/${androidDraft.id}/playbook/progress/start`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "{}",
-  });
-  assert.equal(startedProgressResponse.status, 201);
-  const observedProgress = output(await client.callTool({
-    name: "get_playbook_progress",
-    arguments: { workflowId: androidDraft.id },
-  }));
-  assert.equal(observedProgress.current.playbookContentHash, confirmedPlaybook.contentHash);
-  const observedVerification = output(await client.callTool({
-    name: "get_playbook_verification",
-    arguments: { workflowId: androidDraft.id },
-  }));
-  assert.equal(observedVerification.currentLevel, "maintainer-reviewed");
-  assert.equal(observedVerification.nextLevel, "sample-run");
-
-  const conflict = await client.callTool({
-    name: "update_workflow_draft",
-    arguments: {
-      id: created.id,
-      expectedRevision: 1,
-      patch: { goal: "不应覆盖" },
-    },
-  });
-  assert.equal(conflict.isError, true);
-  assert.match(conflict.content[0].text, /workflow-revision-conflict/);
+  const prompt = await client.getPrompt({ name: "map_requirement_to_workflow", arguments: { goal: "开发一个产品" } });
+  assert.match(prompt.messages[0].content.text, /open_skillmesh/);
+  assert.doesNotMatch(prompt.messages[0].content.text, /open_web_ui/);
 
   await client.close();
-  clientClosed = true;
-  assert.equal(await waitUntilUnavailable(autoStartedUrl), true);
+  closed = true;
 });

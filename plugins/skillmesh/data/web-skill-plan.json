@@ -1,0 +1,69 @@
+{
+  "id": "web-skill-plan",
+  "version": "1.0.0",
+  "stages": [
+    {
+      "id": "frame-direction",
+      "steps": [
+        { "id": "identify-user-problem", "title": "写清首个用户与真实问题", "objective": "把宽泛方向收敛为可访谈、可观察的问题陈述。", "requiredCapabilities": ["discovery", "problem-framing"], "completionCriteria": ["能够用一句话说明谁在什么情境遇到什么阻碍。", "问题陈述不依赖预设产品方案。"] },
+        { "id": "rank-risky-assumptions", "title": "排序最危险假设", "objective": "明确哪些未知如果为假，会让项目失去价值。", "requiredCapabilities": ["problem-framing"], "completionCriteria": ["每个高风险假设都有可观察的支持或反对证据。", "至少定义一个停止或收窄项目的条件。"] }
+      ]
+    },
+    {
+      "id": "validate-opportunity",
+      "steps": [
+        { "id": "map-alternatives", "title": "研究竞品与现有替代行为", "objective": "理解用户今天如何解决问题，以及产品必须提供的差异。", "requiredCapabilities": ["market-research"], "completionCriteria": ["至少覆盖直接竞品、间接工具和不行动三类替代。", "事实与推断清晰分开。"] },
+        { "id": "run-cheap-validation", "title": "执行最低成本机会验证", "objective": "在编码前获得继续、收窄或停止的证据。", "requiredCapabilities": ["evidence-analysis"], "completionCriteria": ["实验使用行为或可复核事实，而非只询问意愿。", "决定与预先定义的阈值一致。"] }
+      ]
+    },
+    {
+      "id": "shape-product",
+      "steps": [
+        { "id": "freeze-mvp-boundary", "title": "冻结可部署 MVP 边界", "objective": "把机会转成一条可在正式环境完成的最小用户主路径。", "requiredCapabilities": ["product-spec"], "completionCriteria": ["主路径从用户输入到可观察结果完整闭环。", "每个首版能力都能追溯到首要用户结果。"] },
+        { "id": "define-success-and-risks", "title": "定义成功指标、风险与验收语言", "objective": "让产品、设计、开发和测试使用同一组可判断标准。", "requiredCapabilities": ["planning", "product-spec"], "completionCriteria": ["指标有数据来源、阈值和决策用途。", "主路径正常、空、错和权限状态均有验收描述。"] }
+      ]
+    },
+    {
+      "id": "design-experience",
+      "steps": [
+        { "id": "map-critical-flow", "title": "绘制关键用户流程与信息结构", "objective": "先解决任务顺序和信息层级，再进入视觉细节。", "requiredCapabilities": ["ux-design"], "completionCriteria": ["每个页面只有一个明确主任务。", "失败分支能回到可行动状态。"] },
+        { "id": "specify-interface-contract", "title": "形成可实现的界面契约", "objective": "定义组件、状态、响应式和无障碍要求，使实现与验收一致。", "requiredCapabilities": ["visual-design", "ux-design"], "completionCriteria": ["实现者无需猜测关键状态和内容规则。", "主路径可用键盘完成且控件有清晰可访问名称。"] }
+      ]
+    },
+    {
+      "id": "build-foundation",
+      "steps": [
+        { "id": "decide-minimum-architecture", "title": "决定最小可维护架构", "objective": "在编码前锁定足够支撑 MVP 的边界，而非提前设计平台。", "requiredCapabilities": ["web-architecture", "security-design"], "completionCriteria": ["每个组件都能追溯到 MVP 必需能力。", "秘密和高权限操作不暴露给客户端。"] },
+        { "id": "establish-runnable-foundation", "title": "建立可重复启动的工程骨架", "objective": "让任何具备基础终端能力的开发者都能启动、检查和重置项目。", "requiredCapabilities": ["web-architecture", "security-design"], "completionCriteria": ["干净环境可按文档启动并访问健康检查。", "仓库不包含真实秘密，失败信息可行动。"] }
+      ]
+    },
+    {
+      "id": "implement-slice",
+      "steps": [
+        { "id": "plan-vertical-slice", "title": "把主路径拆成端到端切片", "objective": "以用户可见结果安排实现顺序，避免先堆孤立页面或底层模块。", "requiredCapabilities": ["frontend-build", "service-build"], "completionCriteria": ["每个循环结束都有用户可见且可验收的增量。", "任务覆盖前端、服务、数据和测试。"] },
+        { "id": "implement-verify-loop", "title": "按实现—验证—修正循环交付主路径", "objective": "逐个切片完成代码、自动检查、浏览器反馈和失败修正。", "requiredCapabilities": ["frontend-build", "service-build"], "completionCriteria": ["刷新后数据和状态保持正确。", "失败、空数据和重试路径有明确反馈。", "相关自动检查真实通过。"] }
+      ]
+    },
+    {
+      "id": "assure-quality",
+      "steps": [
+        { "id": "automate-critical-regressions", "title": "建立风险驱动的自动测试", "objective": "用最少但有效的测试覆盖最昂贵失败和主路径回归。", "requiredCapabilities": ["test-automation"], "completionCriteria": ["主路径破坏时至少一项自动测试失败。", "测试不依赖不可控的线上数据或执行顺序。"] },
+        { "id": "run-browser-security-review", "title": "执行真实浏览器、无障碍与安全验收", "objective": "证明产品在接近用户的环境中可信，而非只证明接口返回成功。", "requiredCapabilities": ["test-automation", "review-security"], "completionCriteria": ["阻断和高风险问题已修复或明确停止发布。", "每个通过结论都有操作与证据。"] }
+      ]
+    },
+    {
+      "id": "launch-product",
+      "steps": [
+        { "id": "prepare-release-contract", "title": "冻结发布、迁移与回滚契约", "objective": "在生产变更前明确条件、顺序、责任和停止点。", "requiredCapabilities": ["deployment", "operations"], "completionCriteria": ["每个高风险动作都有负责人、前置检查和回退。", "回滚说明同时覆盖应用版本与数据兼容。"] },
+        { "id": "deploy-observe-rollback", "title": "上线、观察并验证回滚能力", "objective": "完成可复核的正式发布，并在异常时快速恢复。", "requiredCapabilities": ["deployment", "operations"], "completionCriteria": ["正式环境版本可识别，主路径真实通过。", "故障检测和回滚责任清晰，恢复结果可验证。"] }
+      ]
+    },
+    {
+      "id": "learn-iterate",
+      "steps": [
+        { "id": "observe-user-outcomes", "title": "观测用户是否获得核心结果", "objective": "收集最少但足以驱动取舍的行为与反馈证据。", "requiredCapabilities": ["analytics", "feedback-learning"], "completionCriteria": ["每个事件都对应一个产品决定。", "能定位主路径最大流失或失败点。"] },
+        { "id": "run-learning-review", "title": "复盘并作出下一轮取舍", "objective": "将真实证据转成继续、调整或停止决定，而非自动扩张范围。", "requiredCapabilities": ["feedback-learning", "analytics"], "completionCriteria": ["决定明确引用行为或反馈证据。", "下一循环只有一个优先结果，并保留非目标。"] }
+      ]
+    }
+  ]
+}

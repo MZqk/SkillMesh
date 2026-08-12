@@ -38,10 +38,9 @@ coverage/
 dist/
 build/
 !prototype/dist/
-!prototype/dist/quick-use-widget.html
+!prototype/dist/skillmesh-workbench.html
 !plugins/skillmesh/runtime/dist/
-!plugins/skillmesh/runtime/dist/quick-use-widget.html
+!plugins/skillmesh/runtime/dist/skillmesh-workbench.html
 prototype/output/*
 !prototype/output/pdf/
 prototype/output/pdf/*
-!prototype/output/pdf/development-playbook-sample.pdf

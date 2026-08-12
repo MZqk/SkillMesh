@@ -5,175 +5,143 @@ import path from "node:path";
 import test from "node:test";
 
 import { loadWorkflowTemplate } from "../lib/matcher.mjs";
-import { compilePlaybookDraft } from "../lib/playbook-compiler.mjs";
-import { WorkflowConflictError, WorkflowStore } from "../lib/workflow-store.mjs";
+import { SettingsConflictError, WorkflowConflictError, WorkflowStore } from "../lib/workflow-store.mjs";
 
-test("persists optimistic drafts and immutable human confirmation history", async (context) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "capability-atlas-store-"));
-  const filePath = path.join(directory, "workspace.json");
+const agent = { type: "agent", name: "fixture-agent", channel: "mcp" };
+const human = { type: "human", name: "fixture-user", channel: "mcp-app" };
+
+test("persists optimistic workflow drafts and immutable human confirmations", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "skillmesh-store-"));
   context.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const filePath = path.join(directory, "workspace.json");
   const store = new WorkflowStore({ filePath });
   const template = await loadWorkflowTemplate();
-  const agent = { type: "agent", name: "fixture-agent", version: "1", channel: "mcp" };
-  const human = { type: "human", name: "fixture-user", channel: "web" };
-
   const draft = await store.createWorkflow({
-    goal: "开发一个 Skill 缺口页面",
-    scope: "global",
-    stages: template.stages.slice(0, 2),
+    goal: "开发 Skill 缺口页面",
+    scopeDescription: "展示本机 Skill 证据。",
+    nonGoals: ["不执行 Skill"],
+    acceptanceCriteria: ["缺口清晰"],
+    stages: template.stages.slice(0, 1),
   }, agent);
-  assert.equal(draft.revision, 1);
-  assert.equal(draft.createdBy.name, "fixture-agent");
-  await assert.rejects(
-    store.confirmWorkflow(draft.id, { expectedRevision: 1 }, human),
-    /workflow-not-confirmable:scopeDescription,nonGoals,acceptanceCriteria/,
-  );
-
-  const updated = await store.updateWorkflow(draft.id, {
-    expectedRevision: 1,
-    patch: {
-      scopeDescription: "展示功能工作流所需能力与本机 Skill 证据。",
-      nonGoals: ["不自动安装或执行 Skill"],
-      acceptanceCriteria: ["网页能区分已覆盖、缺失和待优化能力"],
-    },
-  }, agent);
-  assert.equal(updated.revision, 2);
-  await assert.rejects(
-    store.updateWorkflow(draft.id, { expectedRevision: 1, patch: { goal: "stale write" } }, agent),
-    (error) => error instanceof WorkflowConflictError && error.currentRevision === 2,
-  );
-
-  const confirmed = await store.confirmWorkflow(draft.id, { expectedRevision: 2 }, human);
-  assert.equal(confirmed.status, "confirmed");
+  const updated = await store.updateWorkflow(draft.id, { expectedRevision: 1, patch: { goal: "开发即时 Skill 方案" } }, agent);
+  await assert.rejects(store.updateWorkflow(draft.id, { expectedRevision: 1, patch: { goal: "stale" } }, agent),
+    (error) => error instanceof WorkflowConflictError && error.currentRevision === 2);
+  const confirmed = await store.confirmWorkflow(updated.id, { expectedRevision: updated.revision }, human);
   assert.equal(confirmed.confirmedVersion, 1);
-  assert.equal(confirmed.confirmedBy.type, "human");
-
-  const revised = await store.updateWorkflow(draft.id, {
-    expectedRevision: confirmed.revision,
-    patch: { goal: "开发一个可由多个 Agent 更新的 Skill 缺口页面" },
-  }, agent);
-  assert.equal(revised.status, "draft");
-  assert.equal(revised.baseConfirmationVersion, 1);
-
-  const reloaded = new WorkflowStore({ filePath });
-  const persisted = await reloaded.getWorkflow(draft.id, { includeHistory: true });
-  const snapshot = await reloaded.getConfirmation(draft.id, 1);
-  assert.equal(persisted.goal, revised.goal);
-  assert.equal(persisted.history.length, 1);
-  assert.equal(snapshot.snapshot.goal, "开发一个 Skill 缺口页面");
-  assert.equal(snapshot.snapshot.status, "confirmed");
+  assert.equal((await new WorkflowStore({ filePath }).getConfirmation(draft.id, 1)).snapshot.goal, "开发即时 Skill 方案");
 });
 
-test("shares custom scan roots through the local store", async (context) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "capability-atlas-settings-"));
+test("first schema v1 read destructively removes all seven legacy execution collections and preserves supported data", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "skillmesh-schema-v2-"));
   context.after(() => fs.rm(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, "workspace.json");
-  const first = new WorkflowStore({ filePath });
-  const second = new WorkflowStore({ filePath });
-
-  await first.updateSettings({ customRoots: ["/work/skills", "/work/skills"] });
-  assert.deepEqual(await second.getSettings(), { customRoots: ["/work/skills"], revision: 1 });
-});
-
-test("merges workflow backups idempotently without deleting existing data", async (context) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "capability-atlas-import-"));
-  context.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const source = new WorkflowStore({ filePath: path.join(directory, "source.json") });
-  const target = new WorkflowStore({ filePath: path.join(directory, "target.json") });
   const template = await loadWorkflowTemplate();
-  const human = { type: "human", name: "fixture-user", channel: "web" };
+  const source = new WorkflowStore({ filePath: path.join(directory, "source.json") });
   const workflow = await source.createWorkflow({
-    goal: "可备份工作流",
-    scopeDescription: "测试安全合并。",
-    nonGoals: ["不删除目标数据"],
-    acceptanceCriteria: ["重复导入不会复制"],
+    goal: "保留的工作流",
+    scopeDescription: "迁移后仍可读取。",
+    nonGoals: ["不保留旧方案"],
+    acceptanceCriteria: ["Skill 判断保留"],
     stages: template.stages.slice(0, 1),
+  }, agent);
+  const reviewed = await source.setHumanReview(workflow.id, {
+    expectedRevision: workflow.revision,
+    stageId: workflow.stages[0].id,
+    contentHash: "a".repeat(64),
+    decision: "confirmed",
   }, human);
-  await source.confirmWorkflow(workflow.id, { expectedRevision: workflow.revision }, human);
-  const backup = await source.exportData();
+  const supported = await source.read();
+  const legacy = {
+    ...supported,
+    schemaVersion: "1",
+    projectBriefs: [{ id: "brief" }],
+    projectBriefConfirmations: [{ id: "brief-v1" }],
+    playbooks: [{ id: "plan" }],
+    playbookConfirmations: [{ id: "plan-v1" }],
+    playbookProgress: [{ id: "progress" }],
+    playbookVerifications: [{ id: "verification" }],
+    playbookContentHashVersions: [{ id: "legacy-hash" }],
+    events: [...supported.events, { type: "playbook.created" }, { type: "workflow.kept" }],
+  };
+  await fs.writeFile(filePath, `${JSON.stringify(legacy)}\n`);
 
-  const first = await target.importData(backup, human);
-  const second = await target.importData(backup, human);
-  const imported = await target.getWorkflow(workflow.id, { includeHistory: true });
-
-  assert.deepEqual(first, { imported: 1, skipped: 0, confirmationVersions: 1, total: 1 });
-  assert.deepEqual(second, { imported: 0, skipped: 1, confirmationVersions: 0, total: 1 });
-  assert.equal(imported.history.length, 1);
-  assert.equal((await target.listWorkflows()).total, 1);
+  const migratedStore = new WorkflowStore({ filePath });
+  const migrated = await migratedStore.read();
+  const disk = JSON.parse(await fs.readFile(filePath, "utf8"));
+  assert.equal(migrated.schemaVersion, "2");
+  assert.equal(migrated.workflows[0].id, reviewed.id);
+  assert.equal(migrated.workflows[0].reviews[workflow.stages[0].id]["a".repeat(64)].decision, "confirmed");
+  for (const key of ["projectBriefs", "projectBriefConfirmations", "playbooks", "playbookConfirmations", "playbookProgress", "playbookVerifications", "playbookContentHashVersions"]) {
+    assert.equal(key in disk, false, key);
+  }
+  assert.equal(disk.events.some((item) => item.type === "playbook.created"), false);
+  assert.equal(disk.events.some((item) => item.type === "workspace.schema-v2-migrated"), true);
+  assert.equal((await fs.readdir(directory)).some((name) => name.includes("backup")), false);
 });
 
-test("versions a frozen Project Brief and a maintainer-confirmed Playbook independently", async (context) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "capability-atlas-playbook-store-"));
+test("custom roots use optimistic settings revisions and preserve the schema 2 workspace", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "skillmesh-settings-v2-"));
+  context.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const store = new WorkflowStore({ filePath: path.join(directory, "workspace.json") });
+  const initial = await store.getSettings();
+  const updated = await store.updateSettings({
+    expectedRevision: initial.revision,
+    customRoots: [path.join(directory, "skills")],
+  }, human);
+  assert.equal(updated.revision, 1);
+  await assert.rejects(store.updateSettings({ expectedRevision: 0, customRoots: [] }, human),
+    (error) => error instanceof SettingsConflictError && error.currentRevision === 1);
+  const reopened = new WorkflowStore({ filePath: store.filePath });
+  assert.deepEqual((await reopened.getSettings()).customRoots, [path.join(directory, "skills")]);
+  assert.equal((await reopened.read()).schemaVersion, "2");
+});
+
+test("external Skill acceptance requires exact review evidence and a human App actor", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "skillmesh-external-review-"));
   context.after(() => fs.rm(directory, { recursive: true, force: true }));
   const store = new WorkflowStore({ filePath: path.join(directory, "workspace.json") });
   const template = await loadWorkflowTemplate();
-  const agent = { type: "agent", name: "fixture-agent", channel: "mcp" };
-  const human = { type: "human", name: "fixture-user", channel: "web" };
   const workflow = await store.createWorkflow({
-    goal: "开发任务协作 Web 应用",
-    scopeDescription: "交付可部署 MVP。",
-    nonGoals: ["不做企业 SSO"],
-    acceptanceCriteria: ["主流程通过浏览器验收"],
-    stages: template.stages,
+    goal: "审阅一个缺口候选",
+    stages: template.stages.slice(0, 1),
   }, agent);
-  const brief = await store.createProjectBrief(workflow.id, {
-    sourceGoal: workflow.goal,
-    projectName: "任务灯塔",
-    problemStatement: "团队遗漏交接任务。",
-    targetUsers: ["小团队"],
-    primaryOutcome: "处理今日逾期任务。",
-    inScope: ["任务主流程"],
-    outOfScope: ["企业 SSO"],
-    constraints: ["两周 MVP"],
-    successCriteria: ["主流程验收通过"],
-    targetPlatforms: ["Web"],
-    preferredStack: ["Next.js App Router", "TypeScript", "PostgreSQL", "Playwright"],
+  const withCandidate = await store.addExternalCandidate(workflow.id, {
+    expectedRevision: workflow.revision,
+    candidate: {
+      stageId: workflow.stages[0].id,
+      capabilityId: workflow.stages[0].capabilities[0].id,
+      packageId: "example/skill-pack@focused-review",
+      skillName: "focused-review",
+      rationale: "补齐明确缺口",
+      status: "suggested",
+    },
   }, agent);
-  await assert.rejects(
-    store.freezeProjectBrief(workflow.id, { expectedRevision: brief.revision }, agent),
-    /human-project-brief-freeze-required/,
-  );
-  const frozen = await store.freezeProjectBrief(workflow.id, { expectedRevision: brief.revision }, human);
-  assert.equal(frozen.status, "frozen");
-  assert.equal(frozen.frozenVersion, 1);
-
-  const generated = await compilePlaybookDraft({ workflow, projectBrief: frozen });
-  const playbook = await store.createPlaybook(workflow.id, generated, agent);
-  assert.equal(playbook.status, "draft");
-  assert.equal(playbook.verificationLevel, "agent-generated");
-  assert.equal(playbook.stages.length, 9);
-  const initialDiff = await store.getPlaybookDiff(workflow.id);
-  assert.equal(initialDiff.summary.initialVersion, true);
-  assert.equal(initialDiff.currentContentHash, playbook.contentHash);
-  const confirmed = await store.confirmPlaybook(workflow.id, {
-    expectedRevision: playbook.revision,
-    reviewedContentHash: initialDiff.currentContentHash,
+  const candidate = withCandidate.externalCandidates[0];
+  await assert.rejects(store.reviewExternalCandidate(workflow.id, {
+    expectedRevision: withCandidate.revision,
+    candidateId: candidate.id,
+    decision: "accepted",
+  }, human), /external-skill-review-evidence-required/);
+  await assert.rejects(store.reviewExternalCandidate(workflow.id, {
+    expectedRevision: withCandidate.revision,
+    candidateId: candidate.id,
+    decision: "accepted",
+    reviewedContentHash: "a".repeat(64),
+    reviewedRepository: "example/skill-pack",
+    reviewedBranch: "main",
+    reviewedPath: "skills/focused-review/SKILL.md",
+  }, agent), /human-external-skill-review-required/);
+  const accepted = await store.reviewExternalCandidate(workflow.id, {
+    expectedRevision: withCandidate.revision,
+    candidateId: candidate.id,
+    decision: "accepted",
+    reviewedContentHash: "a".repeat(64),
+    reviewedRepository: "example/skill-pack",
+    reviewedBranch: "main",
+    reviewedPath: "skills/focused-review/SKILL.md",
+    reviewedSeverity: "low",
   }, human);
-  assert.equal(confirmed.status, "confirmed");
-  assert.equal(confirmed.verificationLevel, "maintainer-reviewed");
-  assert.equal(confirmed.confirmedVersion, 1);
-
-  const revisedBrief = await store.updateProjectBrief(workflow.id, {
-    expectedRevision: frozen.revision,
-    patch: { constraints: ["一周 MVP"] },
-  }, human);
-  assert.equal(revisedBrief.status, "draft");
-  assert.equal(revisedBrief.baseFrozenVersion, 1);
-  const revisedPlaybook = await store.updatePlaybook(workflow.id, {
-    expectedRevision: confirmed.revision,
-    patch: { summary: "根据新约束重新生成。" },
-  }, agent);
-  assert.equal(revisedPlaybook.status, "draft");
-  assert.equal(revisedPlaybook.baseConfirmationVersion, 1);
-  const revisionDiff = await store.getPlaybookDiff(workflow.id);
-  assert.equal(revisionDiff.baseVersion, 1);
-  assert.equal(revisionDiff.changes.some((item) => item.path === "summary"), true);
-  assert.equal((await store.getProjectBriefVersion(workflow.id, 1)).snapshot.constraints[0], "两周 MVP");
-  assert.equal((await store.getPlaybookVersion(workflow.id, 1)).snapshot.summary.includes("按完整深度编排本机 Skill"), true);
-
-  const backup = await store.exportData();
-  const restored = new WorkflowStore({ filePath: path.join(directory, "restored.json") });
-  await restored.importData(backup, human);
-  assert.equal((await restored.getProjectBrief(workflow.id, { includeHistory: true })).history.length, 1);
-  assert.equal((await restored.getPlaybook(workflow.id, { includeHistory: true })).history.length, 1);
+  assert.equal(accepted.externalCandidates[0].status, "accepted");
+  assert.equal(accepted.externalCandidates[0].reviewedContentHash, "a".repeat(64));
+  assert.equal(accepted.externalCandidates[0].actor.channel, "mcp-app");
 });

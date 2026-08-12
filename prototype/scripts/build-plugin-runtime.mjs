@@ -20,7 +20,6 @@ async function materialize(targetRoot) {
   await build({
     entryPoints: {
       "mcp-server": path.join(prototypeRoot, "mcp-server.mjs"),
-      server: path.join(prototypeRoot, "server.mjs"),
     },
     bundle: true,
     entryNames: "[name]",
@@ -35,19 +34,18 @@ async function materialize(targetRoot) {
   });
 
   await Promise.all([
-    fs.cp(path.join(prototypeRoot, "public"), path.join(runtimeRoot, "public"), { recursive: true }),
     fs.cp(path.join(prototypeRoot, "data"), path.join(targetRoot, "data"), { recursive: true }),
     fs.mkdir(path.join(runtimeRoot, "dist"), { recursive: true }),
     fs.mkdir(path.join(targetRoot, "scripts"), { recursive: true }),
   ]);
   await Promise.all([
     fs.copyFile(
-      path.join(prototypeRoot, "dist", "quick-use-widget.html"),
-      path.join(runtimeRoot, "dist", "quick-use-widget.html"),
+      path.join(prototypeRoot, "dist", "skillmesh-workbench.html"),
+      path.join(runtimeRoot, "dist", "skillmesh-workbench.html"),
     ),
     fs.copyFile(
-      path.join(prototypeRoot, "scripts", "render-playbook-pdf.py"),
-      path.join(targetRoot, "scripts", "render-playbook-pdf.py"),
+      path.join(prototypeRoot, "scripts", "render-skill-plan-pdf.py"),
+      path.join(targetRoot, "scripts", "render-skill-plan-pdf.py"),
     ),
   ]);
 }

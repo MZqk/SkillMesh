@@ -33,8 +33,9 @@ assert(entry?.policy?.authentication === "ON_INSTALL", "marketplace authenticati
 assert(entry?.category === "Developer Tools", "marketplace category must be Developer Tools");
 assert(!("products" in entry.policy), "marketplace must not add product restrictions");
 
-await fs.access(path.join(prototypeRoot, "dist", "quick-use-widget.html"));
+await fs.access(path.join(prototypeRoot, "dist", "skillmesh-workbench.html"));
 await fs.access(path.join(pluginRoot, "runtime", "mcp-server.mjs"));
-await fs.access(path.join(pluginRoot, "runtime", "server.mjs"));
-await fs.access(path.join(pluginRoot, "runtime", "dist", "quick-use-widget.html"));
+await fs.access(path.join(pluginRoot, "runtime", "dist", "skillmesh-workbench.html"));
+assert(!await fs.stat(path.join(pluginRoot, "runtime", "server.mjs")).then(() => true, () => false), "plugin must not bundle an HTTP server");
+assert(!await fs.stat(path.join(pluginRoot, "runtime", "public")).then(() => true, () => false), "plugin must not bundle standalone Web assets");
 console.log("SkillMesh repository plugin contract is valid.");

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>SkillMesh 工作台</title>
+  <style>/*__SKILLMESH_CSS__*/</style>
+</head>
+<body>
+  <main class="workbench" aria-labelledby="app-title">
+    <header class="masthead">
+      <div class="brand-block">
+        <div class="mesh-mark" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div>
+          <p class="eyebrow">SKILLMESH · 原生 MCP APP</p>
+          <h1 id="app-title">把 Skill 放回工作流</h1>
+          <p id="context-summary" class="lede">正在扫描本机 Skill 并装配工作台…</p>
+        </div>
+      </div>
+      <div class="host-block">
+        <span id="host-badge" class="host-badge">连接中</span>
+        <button id="expand-app" class="quiet compact" type="button" hidden>展开工作台</button>
+      </div>
+    </header>
+
+    <section class="control-rail" aria-label="测绘上下文">
+      <label>工作流<select id="workflow-select"><option>正在读取…</option></select></label>
+      <label>当前阶段<select id="stage-select"><option>正在读取…</option></select></label>
+      <fieldset id="target-options" class="target-options">
+        <legend>测绘目标 Agent</legend>
+        <span>正在识别…</span>
+      </fieldset>
+      <button id="refresh-app" class="quiet" type="button">重新扫描</button>
+    </section>
+
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+
+    <nav class="tabs" aria-label="SkillMesh 工作台区域">
+      <button type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="panel-map" id="tab-map" data-tab="map">测绘</button>
+      <button type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="panel-plan" id="tab-plan" data-tab="plan">Skill 方案</button>
+      <button type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="panel-quick" id="tab-quick" data-tab="quick">快速使用</button>
+      <button type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="panel-install" id="tab-install" data-tab="install">安装</button>
+      <button type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="panel-settings" id="tab-settings" data-tab="settings">设置</button>
+    </nav>
+
+    <section id="panel-map" class="panel" role="tabpanel" aria-labelledby="tab-map"></section>
+    <section id="panel-plan" class="panel" role="tabpanel" aria-labelledby="tab-plan" hidden></section>
+    <section id="panel-quick" class="panel" role="tabpanel" aria-labelledby="tab-quick" hidden></section>
+    <section id="panel-install" class="panel" role="tabpanel" aria-labelledby="tab-install" hidden></section>
+    <section id="panel-settings" class="panel" role="tabpanel" aria-labelledby="tab-settings" hidden></section>
+
+    <section id="composer" class="composer" role="dialog" aria-modal="true" hidden aria-labelledby="composer-title" aria-describedby="composer-description">
+      <div class="composer-head">
+        <div>
+          <p id="composer-source" class="eyebrow"></p>
+          <h2 id="composer-title">使用 Skill</h2>
+          <p id="composer-description"></p>
+        </div>
+        <button id="close-composer" class="quiet" type="button">返回工作台</button>
+      </div>
+      <form id="use-form" novalidate>
+        <label>任务<textarea id="task" rows="4" required></textarea></label>
+        <label>预期产物<textarea id="outputs" rows="4" required></textarea></label>
+        <p id="form-error" class="form-error" role="alert"></p>
+        <div class="action-row">
+          <button id="send" class="primary" type="submit">发送到当前 Agent</button>
+          <span id="send-note">消息被宿主接受后才记录最近使用。</span>
+        </div>
+      </form>
+    </section>
+  </main>
+  <script>/*__SKILLMESH_JS__*/</script>
+</body>
+</html>

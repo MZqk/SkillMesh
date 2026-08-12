@@ -241,7 +241,7 @@ export class InstallationManager {
       await this.store.updateWorkflow(workflow.id, {
         expectedRevision: workflow.revision,
         patch: { installationPlans: plans },
-      }, { type: "system", name: "installation-recovery" }).catch(() => {});
+      }, { type: "system", name: "installation-recovery", channel: "mcp-app" }).catch(() => {});
     }
   }
 
@@ -481,12 +481,12 @@ export class InstallationManager {
         plan.basedOnRevision = workflow.revision + 1;
       }
       plan.updatedAt = new Date().toISOString();
-      plan.updatedBy = { type: "system", name: "installation-manager", channel: "web" };
+      plan.updatedBy = { type: "system", name: "installation-manager", channel: "mcp-app" };
       try {
         return await this.store.updateWorkflow(workflowId, {
           expectedRevision: workflow.revision,
           patch: { installationPlans: plans, ...extraPatch },
-        }, { type: "system", name: "installation-manager", channel: "web" });
+        }, { type: "system", name: "installation-manager", channel: "mcp-app" });
       } catch (error) {
         if (!(error instanceof WorkflowConflictError) || attempt === attempts - 1) throw error;
       }

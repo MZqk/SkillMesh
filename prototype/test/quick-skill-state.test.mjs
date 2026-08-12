@@ -4,10 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { QuickSkillService, isCodexCompatible } from "../lib/quick-skill-service.mjs";
+import { QuickSkillService, isTargetCompatible } from "../lib/quick-skill-service.mjs";
 import {
   applyQuickSkillOperation,
-  migrateLegacyQuickSkillState,
   normalizeQuickSkillState,
 } from "../lib/quick-skill-state.mjs";
 import { QuickSkillStateConflictError, WorkflowStore } from "../lib/workflow-store.mjs";
@@ -51,39 +50,6 @@ test("QuickSkillState bounds preferences and applies all three operations", () =
   assert.deepEqual(recent.recent[0], { contentHash: "new", usedAt: "2026-08-09T01:02:03.000Z" });
 });
 
-test("legacy migration unions favorites, keeps newest recent, and never replays after completion", () => {
-  const first = migrateLegacyQuickSkillState({
-    activeWorkflowId: "server",
-    favorites: ["server-favorite"],
-    recent: [{ contentHash: "same", usedAt: "2026-01-01T00:00:00Z" }],
-  }, {
-    activeWorkflowId: "browser",
-    selectedStageId: "browser-stage",
-    preferences: {
-      favorites: ["browser-favorite"],
-      recent: [
-        { contentHash: "same", usedAt: "2026-02-01T00:00:00Z" },
-        { contentHash: "other", usedAt: "2026-01-15T00:00:00Z" },
-      ],
-    },
-  }, [workflow("server"), workflow("browser", [{ id: "browser-stage", title: "浏览器阶段" }])]);
-  assert.equal(first.state.activeWorkflowId, "server");
-  assert.deepEqual(first.state.favorites, ["server-favorite", "browser-favorite"]);
-  assert.equal(first.state.recent[0].usedAt, "2026-02-01T00:00:00.000Z");
-  assert.equal(first.state.legacyWebMigrationCompleted, true);
-
-  const removed = applyQuickSkillOperation(first.state, {
-    type: "set-favorite",
-    contentHash: "browser-favorite",
-    favorite: false,
-  });
-  const replay = migrateLegacyQuickSkillState(removed, {
-    preferences: { favorites: ["browser-favorite"] },
-  }, [workflow("server")]);
-  assert.equal(replay.migrated, false);
-  assert.equal(replay.state.favorites.includes("browser-favorite"), false);
-});
-
 test("store rejects stale QuickSkillState revisions", async (context) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "skillmesh-quick-state-"));
   context.after(() => fs.rm(directory, { recursive: true, force: true }));
@@ -103,15 +69,14 @@ test("store rejects stale QuickSkillState revisions", async (context) => {
   );
 });
 
-test("Codex compatibility keeps undeclared and Codex Skills but hides incompatible favorites", async () => {
-  assert.equal(isCodexCompatible(skill("open")), true);
-  assert.equal(isCodexCompatible(skill("codex", ["codex"])), true);
-  assert.equal(isCodexCompatible(skill("claude", ["claude-code"])), false);
+test("current Agent compatibility keeps undeclared and matching Skills but hides incompatible favorites", async () => {
+  assert.equal(isTargetCompatible(skill("open"), "codex"), true);
+  assert.equal(isTargetCompatible(skill("codex", ["codex"]), "codex"), true);
+  assert.equal(isTargetCompatible(skill("claude", ["claude-code"]), "codex"), false);
 
   const state = normalizeQuickSkillState({
     revision: 4,
     favorites: ["open", "codex", "claude"],
-    legacyWebMigrationCompleted: true,
   });
   const store = {
     read: async () => ({ workflows: [] }),
@@ -126,8 +91,28 @@ test("Codex compatibility keeps undeclared and Codex Skills but hides incompatib
   assert.ok(snapshot.sections.totalVisible <= 14);
 });
 
+test("QuickSkillService filters and labels cards for the current WorkBuddy host", async () => {
+  assert.equal(isTargetCompatible(skill("workbuddy", ["workbuddy"]), "workbuddy"), true);
+  assert.equal(isTargetCompatible(skill("codex", ["codex"]), "workbuddy"), false);
+  const state = normalizeQuickSkillState({
+    favorites: ["workbuddy", "codex"],
+  });
+  const store = {
+    read: async () => ({ workflows: [] }),
+    getQuickSkillState: async () => state,
+  };
+  const service = {
+    inventory: async () => ({ skills: [skill("workbuddy", ["workbuddy"]), skill("codex", ["codex"])] }),
+  };
+  const snapshot = await new QuickSkillService({ store, service }).snapshot({ targetAgent: "workbuddy" });
+  assert.equal(snapshot.targetAgent.id, "workbuddy");
+  assert.match(snapshot.targetAgent.label, /WorkBuddy/);
+  assert.deepEqual(snapshot.sections.favorites.items.map((item) => item.contentHash), ["workbuddy"]);
+  assert.equal(snapshot.visibility.hiddenIncompatibleFavorites, 1);
+});
+
 test("Codex filtering ignores a disabled Codex copy when only an enabled incompatible copy remains", async () => {
-  const state = normalizeQuickSkillState({ favorites: ["shared"], legacyWebMigrationCompleted: true });
+  const state = normalizeQuickSkillState({ favorites: ["shared"] });
   const store = {
     read: async () => ({ workflows: [] }),
     getQuickSkillState: async () => state,
@@ -157,12 +142,26 @@ test("QuickSkillService auto-selects one workflow but asks for selection when se
   });
   const service = {
     inventory: async () => ({ skills: [skill("codex", ["codex"])] }),
-    assessWorkflow: async (id) => planFor(id),
+    getSkillUsagePlan: async (id) => ({
+      stages: [{
+        id: "quick-1",
+        title: "发现",
+        sourceStageIds: ["discover"],
+        cards: [{
+          stepId: "discover-step",
+          stepTitle: "发现",
+          objective: "理解问题",
+          completionCriteria: ["问题明确"],
+          primary: { contentHash: "codex", role: "primary", reviewStatus: "confirmed", rationale: "相关" },
+          alternatives: [],
+        }],
+      }],
+      workflow: { id },
+    }),
   };
   const oneStore = {
     read: async () => ({ workflows: [workflow("one")] }),
     getQuickSkillState: async () => state,
-    getPlaybook: async () => { throw new Error("playbook-not-found"); },
   };
   const one = await new QuickSkillService({ store: oneStore, service }).snapshot();
   assert.equal(one.context.workflowId, "one");
