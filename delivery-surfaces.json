@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "1",
+  "product": "SkillMesh",
+  "sourceOfTruth": "This file defines the only supported user-facing delivery surfaces and the synchronization policy for their capabilities.",
+  "supportedSurfaces": [
+    {
+      "id": "mcp-app",
+      "label": "MCP App",
+      "entry": "open_skillmesh",
+      "renderer": "@modelcontextprotocol/ext-apps",
+      "artifacts": [
+        "prototype/mcp-server.mjs",
+        "prototype/app/workbench.js",
+        "plugins/skillmesh/.codex-plugin/plugin.json"
+      ]
+    },
+    {
+      "id": "agent-skill",
+      "label": "Agent Skill",
+      "entry": "$map-agent-skill-workflows",
+      "artifacts": [
+        "skills/map-agent-skill-workflows/SKILL.md",
+        "skills/map-agent-skill-workflows/agents/openai.yaml",
+        "skills/map-agent-skill-workflows/scripts/skillmesh.py"
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "local-skill-inventory",
+      "synchronization": "required",
+      "surfaces": {
+        "mcp-app": {
+          "state": "supported",
+          "implementation": "prototype/lib/catalog-service.mjs#inventory"
+        },
+        "agent-skill": {
+          "state": "supported",
+          "implementation": "skills/map-agent-skill-workflows/scripts/skillmesh.py scan"
+        }
+      }
+    },
+    {
+      "id": "capability-workflow-mapping",
+      "synchronization": "required",
+      "surfaces": {
+        "mcp-app": {
+          "state": "supported",
+          "implementation": "prototype/lib/matcher.mjs and the native workbench"
+        },
+        "agent-skill": {
+          "state": "supported",
+          "implementation": "skills/map-agent-skill-workflows/scripts/skillmesh.py plan"
+        }
+      }
+    },
+    {
+      "id": "hash-bound-evidence-review",
+      "synchronization": "required",
+      "surfaces": {
+        "mcp-app": {
+          "state": "supported",
+          "implementation": "review_skill_match and record_skill_validation App actions"
+        },
+        "agent-skill": {
+          "state": "supported",
+          "implementation": "review command and hash-bound decisions JSON"
+        }
+      }
+    },
+    {
+      "id": "ordered-route-and-gap-output",
+      "synchronization": "required",
+      "surfaces": {
+        "mcp-app": {
+          "state": "supported",
+          "implementation": "prototype/lib/skill-plan.mjs and the Skill 方案 panel"
+        },
+        "agent-skill": {
+          "state": "supported",
+          "implementation": "skills/map-agent-skill-workflows/scripts/skillmesh.py plan"
+        }
+      }
+    },
+    {
+      "id": "workflow-handoff",
+      "synchronization": "required",
+      "surfaces": {
+        "mcp-app": {
+          "state": "supported",
+          "implementation": "import_agent_skill_workflow then open_skillmesh"
+        },
+        "agent-skill": {
+          "state": "supported",
+          "implementation": "validated workflow JSON described in references/workflow-schema.md"
+        }
+      }
+    },
+    {
+      "id": "human-confirmation-and-controlled-installation",
+      "synchronization": "surface-specific",
+      "rationale": "These actions require an explicit local human interaction, so they remain exclusive to the rendered MCP App.",
+      "surfaces": {
+        "mcp-app": {
+          "state": "supported",
+          "implementation": "App-only confirmation and installation tools"
+        },
+        "agent-skill": {
+          "state": "not-applicable",
+          "implementation": "The Skill can only prepare and recommend; it never installs or confirms on behalf of a human."
+        }
+      }
+    },
+    {
+      "id": "in-conversation-skill-handoff",
+      "synchronization": "surface-specific",
+      "rationale": "ui/message is an MCP Apps host capability; the Agent Skill instead gives the invoking Agent an ordered route directly.",
+      "surfaces": {
+        "mcp-app": {
+          "state": "supported",
+          "implementation": "standard ui/message from the Quick Use panel"
+        },
+        "agent-skill": {
+          "state": "not-applicable",
+          "implementation": "The invoking Agent continues with the trusted or recommended route in its current context."
+        }
+      }
+    }
+  ],
+  "unsupportedSurfaces": [
+    "standalone-web-page",
+    "http-service",
+    "legacy-widget",
+    "standalone-cli-product",
+    "direct-model-api-runtime"
+  ]
+}

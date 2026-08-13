@@ -1,0 +1,4 @@
+interface:
+  display_name: "SkillMesh Workflow Mapper"
+  short_description: "Map local Agent Skills to evidence-backed workflows"
+  default_prompt: "Use $map-agent-skill-workflows to map my task into an evidence-backed local Skill workflow."

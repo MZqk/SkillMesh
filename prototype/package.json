@@ -3,16 +3,16 @@
   "version": "0.9.0",
   "private": true,
   "type": "module",
-  "description": "Native MCP App for local Skill mapping, human confirmation, controlled installation, and ui/message handoff.",
+  "description": "MCP App and companion Agent Skill for local Skill mapping, evidence review, controlled installation, and in-context handoff.",
   "scripts": {
     "mcp": "node mcp-server.mjs",
     "build:app": "node scripts/build-app.mjs",
     "check:app": "node scripts/build-app.mjs --check",
+    "check:surfaces": "node scripts/check-delivery-surfaces.mjs",
     "build:plugin": "node scripts/build-plugin-runtime.mjs",
     "check:plugin": "node scripts/build-plugin-runtime.mjs --check",
     "validate:plugin": "node scripts/validate-plugin.mjs",
-    "setup:pdf": "node scripts/setup-pdf.mjs",
-    "test": "node --test"
+    "setup:pdf": "node scripts/setup-pdf.mjs"
   },
   "engines": {
     "node": ">=20"

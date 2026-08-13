@@ -1,0 +1,116 @@
+{
+  "id": "regular-agent-skill-development",
+  "name": "Regular Agent Skill development",
+  "version": "1.0.0",
+  "description": "Create a concise, reusable Agent Skill with deterministic resources, standard metadata, structural validation, and realistic forward testing.",
+  "stages": [
+    {
+      "id": "understand-skill",
+      "order": 1,
+      "title": "Define triggers and concrete usage",
+      "summary": "Turn the requested capability into explicit examples, boundaries, and success criteria.",
+      "dependencies": [],
+      "deliverables": ["Trigger examples", "Supported scope", "Success criteria"],
+      "acceptanceGate": "Another agent can tell when the Skill should and should not trigger.",
+      "capabilities": [
+        {
+          "id": "skill-requirements",
+          "label": "Agent Skill requirements and trigger design",
+          "required": true,
+          "terms": ["skill creator", "creating effective skills", "skill creation process", "triggering mechanism", "usage patterns", "skill 开发流程"],
+          "acceptanceCriteria": ["Concrete prompts and boundaries are defined"]
+        }
+      ]
+    },
+    {
+      "id": "design-resources",
+      "order": 2,
+      "title": "Design reusable Skill resources",
+      "summary": "Choose the minimum scripts, references, and assets that make repeated execution reliable.",
+      "dependencies": ["understand-skill"],
+      "deliverables": ["Resource plan", "Progressive disclosure design"],
+      "acceptanceGate": "Every bundled file directly supports a recurring task and detailed context is loaded only when needed.",
+      "capabilities": [
+        {
+          "id": "skill-architecture",
+          "label": "Skill resource architecture and progressive disclosure",
+          "required": true,
+          "terms": ["scripts references assets", "progressive disclosure", "skill anatomy", "bundled resources", "resource architecture"],
+          "acceptanceCriteria": ["The SKILL.md stays concise and reusable logic is bundled"]
+        }
+      ]
+    },
+    {
+      "id": "initialize-metadata",
+      "order": 3,
+      "title": "Initialize the standard Skill structure",
+      "summary": "Create the named directory, SKILL.md, and Agent UI metadata with the standard generator.",
+      "dependencies": ["design-resources"],
+      "deliverables": ["Skill directory", "SKILL.md frontmatter", "agents/openai.yaml"],
+      "acceptanceGate": "The directory name, frontmatter name, description, and default prompt satisfy the Agent Skill conventions.",
+      "capabilities": [
+        {
+          "id": "skill-scaffolding",
+          "label": "Agent Skill scaffolding and metadata generation",
+          "required": true,
+          "terms": ["init_skill.py", "generate_openai_yaml.py", "agents/openai.yaml", "Initializing the Skill", "skill scaffolding"],
+          "acceptanceCriteria": ["The official initializer creates the structure"]
+        }
+      ]
+    },
+    {
+      "id": "implement-skill",
+      "order": 4,
+      "title": "Implement instructions and resources",
+      "summary": "Write imperative instructions and test every deterministic script on representative inputs.",
+      "dependencies": ["initialize-metadata"],
+      "deliverables": ["Final SKILL.md", "Working bundled resources"],
+      "acceptanceGate": "The Skill can perform its core task without hidden project context or placeholder files.",
+      "capabilities": [
+        {
+          "id": "skill-implementation",
+          "label": "Skill implementation and script testing",
+          "required": true,
+          "terms": ["Edit the Skill", "Start with Reusable Skill Contents", "Added scripts must be tested", "imperative/infinitive form", "implement resources"],
+          "acceptanceCriteria": ["All bundled scripts run successfully"]
+        }
+      ]
+    },
+    {
+      "id": "validate-skill",
+      "order": 5,
+      "title": "Validate structure and behavior",
+      "summary": "Run the standard validator, syntax checks, focused tests, and the project's relevant regression suite.",
+      "dependencies": ["implement-skill"],
+      "deliverables": ["Validator output", "Script test output", "Regression results"],
+      "acceptanceGate": "Structural checks and representative core paths pass with reproducible commands.",
+      "capabilities": [
+        {
+          "id": "skill-validation",
+          "label": "Agent Skill validation and quality assurance",
+          "required": true,
+          "terms": ["quick_validate.py", "Validate the Skill", "validation script checks", "structural validation", "representative test"],
+          "acceptanceCriteria": ["Validation commands and results are recorded"]
+        }
+      ]
+    },
+    {
+      "id": "forward-test-skill",
+      "order": 6,
+      "title": "Forward-test and iterate",
+      "summary": "Use a fresh regular Agent context on a realistic request, inspect raw artifacts, fix transferable failures, and retest.",
+      "dependencies": ["validate-skill"],
+      "deliverables": ["Forward-test prompt", "Raw output or artifacts", "Iteration result"],
+      "acceptanceGate": "A fresh Agent can complete the representative task from the Skill and task-local context alone.",
+      "capabilities": [
+        {
+          "id": "skill-forward-testing",
+          "label": "Independent Agent Skill forward testing",
+          "required": true,
+          "terms": ["forward-testing", "forward test", "validation integrity", "subagents during iteration", "realistic task", "iterate skill"],
+          "acceptanceCriteria": ["The test does not leak expected answers or hidden context"]
+        }
+      ]
+    }
+  ]
+}
